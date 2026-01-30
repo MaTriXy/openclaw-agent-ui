@@ -28,7 +28,7 @@ const runGit = (cwd: string, args: string[]) => {
   return result.stdout?.trim() ?? "";
 };
 
-const removeWorktree = (repoPath: string, worktreeDir: string) => {
+const removeWorktree = (repoPath: string, worktreeDir: string, force: boolean) => {
   if (!fs.existsSync(worktreeDir)) {
     return { removed: false, warning: `Agent workspace not found at ${worktreeDir}.` };
   }
@@ -36,7 +36,8 @@ const removeWorktree = (repoPath: string, worktreeDir: string) => {
   if (!stat.isDirectory()) {
     throw new Error(`Agent workspace path is not a directory: ${worktreeDir}`);
   }
-  runGit(repoPath, ["worktree", "remove", worktreeDir]);
+  const args = force ? ["worktree", "remove", "-f", worktreeDir] : ["worktree", "remove", worktreeDir];
+  runGit(repoPath, args);
   return { removed: true, warning: null };
 };
 
@@ -93,26 +94,11 @@ export async function POST(request: Request) {
       return NextResponse.json(result);
     }
 
-    const dirtyAgents: string[] = [];
-    for (const { tile } of candidates) {
-      if (!fs.existsSync(tile.workspacePath)) continue;
-      if (isWorktreeDirty(tile.workspacePath)) {
-        dirtyAgents.push(tile.agentId);
-      }
-    }
-    if (dirtyAgents.length > 0) {
-      return NextResponse.json(
-        {
-          error: `Archived agents have uncommitted changes: ${dirtyAgents.join(", ")}. Restore the tile and commit or discard changes before cleanup.`,
-        },
-        { status: 409 }
-      );
-    }
-
     const warnings: string[] = [];
     const removals: Array<{ projectId: string; tileId: string }> = [];
     const reposTouched = new Set<string>();
     const agentIds: string[] = [];
+    const dirtyAgents: string[] = [];
 
     for (const { project, tile } of candidates) {
       const repoPath = project.repoPath;
@@ -128,7 +114,12 @@ export async function POST(request: Request) {
       }
 
       reposTouched.add(repoPath);
-      const removal = removeWorktree(repoPath, tile.workspacePath);
+      const workspaceExists = fs.existsSync(tile.workspacePath);
+      const isDirty = workspaceExists ? isWorktreeDirty(tile.workspacePath) : false;
+      if (isDirty) {
+        dirtyAgents.push(tile.agentId);
+      }
+      const removal = removeWorktree(repoPath, tile.workspacePath, isDirty);
       if (removal.warning) warnings.push(removal.warning);
 
       deleteDirIfExists(
@@ -139,6 +130,12 @@ export async function POST(request: Request) {
 
       removals.push({ projectId: project.id, tileId: tile.id });
       agentIds.push(tile.agentId);
+    }
+
+    if (dirtyAgents.length > 0) {
+      warnings.push(
+        `Archived agents removed with uncommitted changes: ${dirtyAgents.join(", ")}.`
+      );
     }
 
     const { warnings: configWarnings } = updateClawdbotConfig((config) => {
