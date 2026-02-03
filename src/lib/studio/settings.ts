@@ -14,7 +14,7 @@ export type StudioGatewaySettings = {
 };
 
 export type FocusFilter = "all" | "needs-attention" | "running" | "idle";
-export type StudioViewMode = "focused" | "canvas";
+export type StudioViewMode = "focused";
 
 export type StudioFocusedPreference = {
   mode: StudioViewMode;
@@ -71,7 +71,7 @@ const normalizeViewMode = (
   fallback: StudioViewMode = "focused"
 ): StudioViewMode => {
   const mode = coerceString(value);
-  if (mode === "focused" || mode === "canvas") {
+  if (mode === "focused") {
     return mode;
   }
   return fallback;

@@ -3,14 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { Project, ProjectsStore } from "@/lib/projects/types";
-import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
+import { resolveStudioDataDir } from "@/lib/projects/worktrees.server";
 import { loadClawdbotConfig } from "@/lib/clawdbot/config";
 import { resolveDefaultAgentId } from "@/lib/clawdbot/resolveDefaultAgent";
 import { parseAgentIdFromSessionKey, buildSessionKey } from "@/lib/projects/sessionKey";
 import { resolveWorkspaceSelection } from "@/lib/studio/workspaceSettings.server";
 
 const STORE_VERSION: ProjectsStore["version"] = 3;
-const STORE_DIR = resolveAgentCanvasDir();
+const STORE_DIR = resolveStudioDataDir();
 const STORE_PATH = path.join(STORE_DIR, "projects.json");
 const LEGACY_STORE_PATH = path.join(STORE_DIR, "legacy-projects.json");
 

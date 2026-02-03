@@ -1,8 +1,8 @@
 # Architecture
 
 ## High-level overview & goals
-OpenClaw Studio is a gateway-first, single-user Next.js App Router UI for managing OpenClaw agents on a canvas. It provides:
-- A canvas UI that renders one tile per gateway agent.
+OpenClaw Studio is a gateway-first, single-user Next.js App Router UI for managing OpenClaw agents in a focused workspace. It provides:
+- A focused workspace UI with fleet list, primary agent panel, and inspect sidebar.
 - Local persistence for gateway connection + per-gateway layout via a JSON settings file.
 - Direct integration with the OpenClaw runtime via a WebSocket gateway.
 - Gateway-backed edits for agent config and workspace files.
@@ -28,7 +28,7 @@ Non-goals:
 This keeps feature cohesion high while preserving a clear client/server boundary.
 
 ## Main modules / bounded contexts
-- **Canvas UI** (`src/features/canvas`): React Flow canvas, tiles, editor UI, local in-memory state + actions. Agent tiles render a status-first summary and latest-update preview driven by gateway events + summary snapshots (`src/features/canvas/state/summary.ts`). Full transcripts load only on explicit “Load history” actions. Tiles are seeded from `agents.list` and keyed by `agentId + mainKey`.
+- **Focused workspace UI** (`src/features/agents`): focused agent panel, fleet sidebar, inspect panel, and local in-memory state + actions. Agents render a status-first summary and latest-update preview driven by gateway events + summary snapshots (`src/features/agents/state/summary.ts`). Full transcripts load only on explicit “Load history” actions. Entries are seeded from `agents.list` and keyed by `agentId + mainKey`.
 - **Studio settings** (`src/lib/studio`, `src/app/api/studio`): local settings store for gateway URL/token and per-gateway layout (`src/lib/studio/settings.ts`, `src/lib/studio/settings.server.ts`, `src/app/api/studio/route.ts`). `src/lib/studio/client.ts` provides the client fetch helpers.
 - **Gateway** (`src/lib/gateway`): WebSocket client for agent runtime (frames, connect, request/response). The OpenClaw control UI client is vendored in `src/lib/gateway/openclaw/GatewayBrowserClient.ts` with a sync script at `scripts/sync-openclaw-gateway-client.ts`.
 - **Gateway-backed config + workspace edits** (`src/lib/gateway/agentConfig.ts`, `src/lib/gateway/tools.ts`, `src/app/api/gateway/tools/route.ts`): agent rename/heartbeat via `config.get` + `config.patch`, workspace file read/write via `/tools/invoke` proxy.
@@ -38,7 +38,7 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 
 ## Directory layout (top-level)
 - `src/app`: Next.js App Router pages, layouts, global styles, and API routes.
-- `src/features`: feature-first UI modules (currently canvas).
+- `src/features`: feature-first UI modules (currently focused workspace components under `features/agents`).
 - `src/lib`: domain utilities, adapters, API clients, and shared logic.
 - `src/components`: shared UI components (minimal use today).
 - `src/styles`: shared styling assets.
@@ -49,12 +49,12 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 ### 1) Studio settings + layout
 - **Source of truth**: JSON settings file at `~/.openclaw/openclaw-studio/settings.json` (resolved via `resolveStateDir`, with legacy fallbacks in `src/lib/clawdbot/paths.ts`). Settings store the gateway URL/token plus per-gateway layout overrides (position, size, avatar seed).
 - **Server boundary**: `src/app/api/studio/route.ts` loads/saves settings via `src/lib/studio/settings.server.ts`.
-- **Client boundary**: `useGatewayConnection` loads settings on startup, updates them on changes, and `resolveGatewayLayout` applies per-gateway layout on tile creation.
+- **Client boundary**: `useGatewayConnection` loads settings on startup, updates them on changes, and `resolveGatewayLayout` applies per-gateway layout on agent hydration.
 
 Flow:
 1. UI loads settings from `/api/studio`.
 2. Gateway URL/token seed the connection panel and auto-connect.
-3. Layout overrides are applied when hydrating agent tiles.
+3. Layout overrides are applied when hydrating agents.
 4. UI updates layout in memory and persists patches to `/api/studio`.
 
 ### 2) Agent runtime (gateway)
@@ -66,7 +66,7 @@ Flow:
 2. `GatewayClient` connects + sends `connect` request.
 3. UI requests `agents.list` and builds session keys via `buildAgentMainSessionKey(agentId, mainKey)`.
 4. UI sends requests (frames) and receives event streams.
-5. Canvas store updates tile output/state.
+5. Agent store updates agent output/state.
 
 ### 3) Agent config + workspace files
 - **Workspace files**: `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`.
@@ -91,12 +91,12 @@ Flow:
 - **Filesystem helpers**: server-only utilities live in `src/lib/fs.server.ts` (safe directory/file creation, home-scoped path autocomplete). These are used for local settings, cron summaries, and path suggestions, not for workspace file edits.
 - **Tracing**: `src/instrumentation.ts` registers `@vercel/otel` for telemetry.
 - **Validation**: request payload validation in API routes; typed payloads in `src/lib/projects/types`.
-- **Legacy modules**: `src/lib/projects` and `src/app/api/projects` remain but are not part of the primary agent-tile flow.
+- **Legacy modules**: `src/lib/projects` and `src/app/api/projects` remain but are not part of the primary agent management flow.
 
 ## Major design decisions & trade-offs
 - **Local settings file over DB**: fast, local-first persistence for gateway connection + layout; trade-off is no concurrency or multi-user support.
 - **WebSocket gateway direct to client**: lowest latency for streaming; trade-off is tighter coupling to the gateway protocol in the UI.
-- **Gateway-first agent tiles**: tiles map 1:1 to `agents.list` entries with main sessions; trade-off is no local-only agent concept.
+- **Gateway-first agent records**: records map 1:1 to `agents.list` entries with main sessions; trade-off is no local-only agent concept.
 - **Gateway-backed config + workspace edits**: rename/heartbeat via `config.patch`, workspace files via `/tools/invoke`; trade-off is reliance on gateway availability and tool allowlists.
 - **Vendored gateway client + sync script**: reduces drift from upstream OpenClaw UI; trade-off is maintaining a sync path and local copies of upstream helpers.
 - **Feature-first organization**: increases cohesion in UI; trade-off is more discipline to keep shared logic in `lib`.
@@ -108,7 +108,7 @@ Flow:
 ```mermaid
 C4Context
   title OpenClaw Studio - System Context
-  Person(user, "User", "Operates agent canvas locally")
+  Person(user, "User", "Operates agents locally")
   System(ui, "OpenClaw Studio", "Next.js App Router UI")
   System_Ext(gateway, "OpenClaw Gateway", "WebSocket runtime")
   System_Ext(fs, "Local Filesystem", "settings.json, cron/jobs.json, optional openclaw.json")
@@ -127,7 +127,7 @@ C4Container
   Person(user, "User")
 
   Container_Boundary(app, "Next.js App") {
-    Container(client, "Client UI", "React", "Canvas UI, state, gateway client")
+    Container(client, "Client UI", "React", "Focused workspace UI, state, gateway client")
     Container(api, "API Routes", "Next.js route handlers", "Studio settings, gateway tools, cron, Discord")
   }
 
@@ -144,11 +144,11 @@ C4Container
 
 ## Explicit forbidden patterns
 - Do not read/write local files directly from client components.
-- Do not reintroduce local projects/workspaces as a source of truth for agent tiles.
+- Do not reintroduce local projects/workspaces as a source of truth for agent records.
 - Do not write agent rename/heartbeat data directly to `openclaw.json`; use gateway `config.patch`.
 - Do not read/write workspace files on the local filesystem; use the gateway tools proxy.
 - Do not store gateway tokens or secrets in client-side persistent storage.
-- Do not add new global mutable state outside `AgentCanvasProvider` for canvas data.
+- Do not add new global mutable state outside `AgentStoreProvider` for agent UI data.
 - Do not silently swallow errors in API routes; always return actionable errors.
 - Do not add heavy abstractions or frameworks unless there is clear evidence of need.
 

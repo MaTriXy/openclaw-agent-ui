@@ -6,7 +6,7 @@ import {
   resolveDefaultAgentId,
   resolveDefaultWorkspacePath,
 } from "@/lib/clawdbot/resolveDefaultAgent";
-import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
+import { resolveStudioDataDir } from "@/lib/projects/worktrees.server";
 
 type WorkspaceSettings = {
   workspacePath?: string;
@@ -16,7 +16,7 @@ type WorkspaceSettings = {
 
 const SETTINGS_FILENAME = "settings.json";
 
-const resolveSettingsPath = () => path.join(resolveAgentCanvasDir(), SETTINGS_FILENAME);
+const resolveSettingsPath = () => path.join(resolveStudioDataDir(), SETTINGS_FILENAME);
 
 const normalizeSettings = (raw: unknown): WorkspaceSettings => {
   if (!raw || typeof raw !== "object") return {};

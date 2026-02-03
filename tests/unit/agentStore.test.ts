@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  agentCanvasReducer,
+  agentStoreReducer,
   getAttentionForAgent,
   getFilteredAgents,
-  initialAgentCanvasState,
-  type AgentSeed,
-} from "@/features/canvas/state/store";
-import { MIN_TILE_SIZE } from "@/lib/canvasTileDefaults";
+  initialAgentStoreState,
+  type AgentStoreSeed,
+} from "@/features/agents/state/store";
+import { MIN_AGENT_PANEL_SIZE } from "@/lib/agentPanelDefaults";
 
-describe("agent canvas store", () => {
+describe("agent store", () => {
   it("hydrates agent tiles with defaults and selection", () => {
-    const seed: AgentSeed = {
+    const seed: AgentStoreSeed = {
       agentId: "agent-1",
       name: "Agent One",
       sessionKey: "agent:agent-1:main",
       position: { x: 10, y: 20 },
       size: { width: 120, height: 80 },
     };
-    const next = agentCanvasReducer(initialAgentCanvasState, {
+    const next = agentStoreReducer(initialAgentStoreState, {
       type: "hydrateAgents",
       agents: [seed],
     });
@@ -27,33 +27,33 @@ describe("agent canvas store", () => {
     expect(next.agents).toHaveLength(1);
     expect(next.agents[0].status).toBe("idle");
     expect(next.agents[0].outputLines).toEqual([]);
-    expect(next.agents[0].size.width).toBeGreaterThanOrEqual(MIN_TILE_SIZE.width);
-    expect(next.agents[0].size.height).toBeGreaterThanOrEqual(MIN_TILE_SIZE.height);
+    expect(next.agents[0].size.width).toBeGreaterThanOrEqual(MIN_AGENT_PANEL_SIZE.width);
+    expect(next.agents[0].size.height).toBeGreaterThanOrEqual(MIN_AGENT_PANEL_SIZE.height);
   });
 
-  it("clamps tile size updates", () => {
-    const seed: AgentSeed = {
+  it("clamps agent panel size updates", () => {
+    const seed: AgentStoreSeed = {
       agentId: "agent-1",
       name: "Agent One",
       sessionKey: "agent:agent-1:main",
       position: { x: 0, y: 0 },
-      size: { width: MIN_TILE_SIZE.width, height: MIN_TILE_SIZE.height },
+      size: { width: MIN_AGENT_PANEL_SIZE.width, height: MIN_AGENT_PANEL_SIZE.height },
     };
-    const hydrated = agentCanvasReducer(initialAgentCanvasState, {
+    const hydrated = agentStoreReducer(initialAgentStoreState, {
       type: "hydrateAgents",
       agents: [seed],
     });
-    const next = agentCanvasReducer(hydrated, {
+    const next = agentStoreReducer(hydrated, {
       type: "updateAgent",
       agentId: "agent-1",
       patch: { size: { width: 10, height: 10 } },
     });
-    expect(next.agents[0].size.width).toBeGreaterThanOrEqual(MIN_TILE_SIZE.width);
-    expect(next.agents[0].size.height).toBeGreaterThanOrEqual(MIN_TILE_SIZE.height);
+    expect(next.agents[0].size.width).toBeGreaterThanOrEqual(MIN_AGENT_PANEL_SIZE.width);
+    expect(next.agents[0].size.height).toBeGreaterThanOrEqual(MIN_AGENT_PANEL_SIZE.height);
   });
 
   it("tracks_unseen_activity_for_non_selected_agents", () => {
-    const seeds: AgentSeed[] = [
+    const seeds: AgentStoreSeed[] = [
       {
         agentId: "agent-1",
         name: "Agent One",
@@ -69,11 +69,11 @@ describe("agent canvas store", () => {
         size: { width: 320, height: 320 },
       },
     ];
-    const hydrated = agentCanvasReducer(initialAgentCanvasState, {
+    const hydrated = agentStoreReducer(initialAgentStoreState, {
       type: "hydrateAgents",
       agents: seeds,
     });
-    const withActivity = agentCanvasReducer(hydrated, {
+    const withActivity = agentStoreReducer(hydrated, {
       type: "markActivity",
       agentId: "agent-2",
       at: 1700000000000,
@@ -85,7 +85,7 @@ describe("agent canvas store", () => {
       "needs-attention"
     );
 
-    const selected = agentCanvasReducer(withActivity, {
+    const selected = agentStoreReducer(withActivity, {
       type: "selectAgent",
       agentId: "agent-2",
     });
@@ -94,7 +94,7 @@ describe("agent canvas store", () => {
   });
 
   it("filters_agents_by_attention_and_status", () => {
-    const seeds: AgentSeed[] = [
+    const seeds: AgentStoreSeed[] = [
       {
         agentId: "agent-1",
         name: "Agent One",
@@ -117,26 +117,26 @@ describe("agent canvas store", () => {
         size: { width: 320, height: 320 },
       },
     ];
-    let state = agentCanvasReducer(initialAgentCanvasState, {
+    let state = agentStoreReducer(initialAgentStoreState, {
       type: "hydrateAgents",
       agents: seeds,
     });
-    state = agentCanvasReducer(state, {
+    state = agentStoreReducer(state, {
       type: "updateAgent",
       agentId: "agent-1",
       patch: { awaitingUserInput: true },
     });
-    state = agentCanvasReducer(state, {
+    state = agentStoreReducer(state, {
       type: "updateAgent",
       agentId: "agent-2",
       patch: { status: "running" },
     });
-    state = agentCanvasReducer(state, {
+    state = agentStoreReducer(state, {
       type: "updateAgent",
       agentId: "agent-3",
       patch: { status: "error" },
     });
-    state = agentCanvasReducer(state, {
+    state = agentStoreReducer(state, {
       type: "markActivity",
       agentId: "agent-2",
       at: 1700000000001,
@@ -159,7 +159,7 @@ describe("agent canvas store", () => {
   });
 
   it("clears_unseen_indicator_on_focus", () => {
-    const seeds: AgentSeed[] = [
+    const seeds: AgentStoreSeed[] = [
       {
         agentId: "agent-1",
         name: "Agent One",
@@ -175,11 +175,11 @@ describe("agent canvas store", () => {
         size: { width: 320, height: 320 },
       },
     ];
-    let state = agentCanvasReducer(initialAgentCanvasState, {
+    let state = agentStoreReducer(initialAgentStoreState, {
       type: "hydrateAgents",
       agents: seeds,
     });
-    state = agentCanvasReducer(state, {
+    state = agentStoreReducer(state, {
       type: "markActivity",
       agentId: "agent-2",
       at: 1700000000100,
@@ -191,7 +191,7 @@ describe("agent canvas store", () => {
       "needs-attention"
     );
 
-    state = agentCanvasReducer(state, {
+    state = agentStoreReducer(state, {
       type: "selectAgent",
       agentId: "agent-2",
     });

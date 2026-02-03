@@ -55,7 +55,7 @@ const loadStoreModule = async ({
 }): Promise<StoreModule> => {
   vi.resetModules();
   vi.doMock("@/lib/projects/worktrees.server", () => ({
-    resolveAgentCanvasDir: () => storeDir,
+    resolveStudioDataDir: () => storeDir,
   }));
   vi.doMock("@/lib/studio/workspaceSettings.server", () => ({
     resolveWorkspaceSelection: () => workspaceSelection,

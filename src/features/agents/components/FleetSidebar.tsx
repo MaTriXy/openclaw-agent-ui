@@ -1,9 +1,9 @@
-import type { AgentTile, FocusFilter } from "@/features/canvas/state/store";
-import { getAttentionForAgent } from "@/features/canvas/state/store";
+import type { AgentState, FocusFilter } from "@/features/agents/state/store";
+import { getAttentionForAgent } from "@/features/agents/state/store";
 import { AgentAvatar } from "./AgentAvatar";
 
 type FleetSidebarProps = {
-  agents: AgentTile[];
+  agents: AgentState[];
   selectedAgentId: string | null;
   filter: FocusFilter;
   onFilterChange: (next: FocusFilter) => void;
@@ -21,13 +21,13 @@ const FILTER_OPTIONS: Array<{ value: FocusFilter; label: string; testId: string 
   { value: "idle", label: "Idle", testId: "fleet-filter-idle" },
 ];
 
-const statusLabel: Record<AgentTile["status"], string> = {
+const statusLabel: Record<AgentState["status"], string> = {
   idle: "Idle",
   running: "Running",
   error: "Error",
 };
 
-const statusClassName: Record<AgentTile["status"], string> = {
+const statusClassName: Record<AgentState["status"], string> = {
   idle: "bg-accent text-accent-foreground border border-border",
   running: "bg-primary text-primary-foreground",
   error: "bg-destructive text-destructive-foreground",

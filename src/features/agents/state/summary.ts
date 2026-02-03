@@ -1,4 +1,4 @@
-import type { AgentTile } from "./store";
+import type { AgentState } from "./store";
 import { extractText } from "@/lib/text/message-extract";
 import { stripUiMetadata, isUiMetadataPrefix } from "@/lib/text/message-metadata";
 
@@ -21,7 +21,7 @@ export type AgentEventPayload = {
 export const getChatSummaryPatch = (
   payload: ChatEventPayload,
   now: number = Date.now()
-): Partial<AgentTile> | null => {
+): Partial<AgentState> | null => {
   const message = payload.message;
   const role =
     message && typeof message === "object"
@@ -32,7 +32,7 @@ export const getChatSummaryPatch = (
     return { lastActivityAt: now };
   }
   const cleaned = typeof rawText === "string" ? stripUiMetadata(rawText) : null;
-  const patch: Partial<AgentTile> = { lastActivityAt: now };
+  const patch: Partial<AgentState> = { lastActivityAt: now };
   if (role === "user") {
     if (cleaned) {
       patch.lastUserMessage = cleaned;
@@ -54,11 +54,11 @@ export const getChatSummaryPatch = (
 export const getAgentSummaryPatch = (
   payload: AgentEventPayload,
   now: number = Date.now()
-): Partial<AgentTile> | null => {
+): Partial<AgentState> | null => {
   if (payload.stream !== "lifecycle") return null;
   const phase = typeof payload.data?.phase === "string" ? payload.data.phase : "";
   if (!phase) return null;
-  const patch: Partial<AgentTile> = { lastActivityAt: now };
+  const patch: Partial<AgentState> = { lastActivityAt: now };
   if (phase === "start") {
     patch.status = "running";
     return patch;

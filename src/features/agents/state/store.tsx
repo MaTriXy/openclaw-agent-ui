@@ -9,22 +9,21 @@ import {
   type ReactNode,
 } from "react";
 
-import { CANVAS_BASE_ZOOM } from "@/lib/canvasDefaults";
-import { MAX_TILE_HEIGHT, MIN_TILE_SIZE } from "@/lib/canvasTileDefaults";
+import { MAX_AGENT_PANEL_HEIGHT, MIN_AGENT_PANEL_SIZE } from "@/lib/agentPanelDefaults";
 
 export type AgentStatus = "idle" | "running" | "error";
 export type FocusFilter = "all" | "needs-attention" | "running" | "idle";
 export type AgentAttention = "normal" | "needs-attention";
 
-export type TilePosition = { x: number; y: number };
-export type TileSize = { width: number; height: number };
+export type AgentPosition = { x: number; y: number };
+export type AgentPanelSize = { width: number; height: number };
 
-export type AgentSeed = {
+export type AgentStoreSeed = {
   agentId: string;
   name: string;
   sessionKey: string;
-  position: TilePosition;
-  size: TileSize;
+  position: AgentPosition;
+  size: AgentPanelSize;
   avatarSeed?: string | null;
   avatarUrl?: string | null;
   model?: string | null;
@@ -33,7 +32,7 @@ export type AgentSeed = {
   showThinkingTraces?: boolean;
 };
 
-export type AgentTile = AgentSeed & {
+export type AgentState = AgentStoreSeed & {
   status: AgentStatus;
   awaitingUserInput: boolean;
   hasUnseenActivity: boolean;
@@ -55,51 +54,45 @@ export type AgentTile = AgentSeed & {
   showThinkingTraces: boolean;
 };
 
-export type CanvasTransform = {
-  zoom: number;
-  offsetX: number;
-  offsetY: number;
-};
-
-export type CanvasState = {
-  agents: AgentTile[];
+export type AgentStoreState = {
+  agents: AgentState[];
   selectedAgentId: string | null;
-  canvas: CanvasTransform;
   loading: boolean;
   error: string | null;
 };
 
 type Action =
-  | { type: "hydrateAgents"; agents: AgentSeed[] }
+  | { type: "hydrateAgents"; agents: AgentStoreSeed[] }
   | { type: "setError"; error: string | null }
   | { type: "setLoading"; loading: boolean }
-  | { type: "updateAgent"; agentId: string; patch: Partial<AgentTile> }
+  | { type: "updateAgent"; agentId: string; patch: Partial<AgentState> }
   | { type: "appendOutput"; agentId: string; line: string }
   | { type: "setStream"; agentId: string; value: string | null }
   | { type: "markActivity"; agentId: string; at?: number }
-  | { type: "selectAgent"; agentId: string | null }
-  | { type: "setCanvas"; patch: Partial<CanvasTransform> };
+  | { type: "selectAgent"; agentId: string | null };
 
-const initialState: CanvasState = {
+const initialState: AgentStoreState = {
   agents: [],
   selectedAgentId: null,
-  canvas: { zoom: CANVAS_BASE_ZOOM, offsetX: 0, offsetY: 0 },
   loading: true,
   error: null,
 };
 
-const clampTileHeight = (height: number) =>
-  Math.min(MAX_TILE_HEIGHT, Math.max(MIN_TILE_SIZE.height, height));
+const clampAgentPanelHeight = (height: number) =>
+  Math.min(MAX_AGENT_PANEL_HEIGHT, Math.max(MIN_AGENT_PANEL_SIZE.height, height));
 
-const clampTileWidth = (width: number) => Math.max(MIN_TILE_SIZE.width, width);
+const clampAgentPanelWidth = (width: number) => Math.max(MIN_AGENT_PANEL_SIZE.width, width);
 
-const clampTileSize = (size: TileSize): TileSize => ({
-  width: clampTileWidth(size.width),
-  height: clampTileHeight(size.height),
+const clampAgentPanelSize = (size: AgentPanelSize): AgentPanelSize => ({
+  width: clampAgentPanelWidth(size.width),
+  height: clampAgentPanelHeight(size.height),
 });
 
-const createRuntimeAgent = (seed: AgentSeed, existing?: AgentTile | null): AgentTile => {
-  const size = clampTileSize(seed.size);
+const createRuntimeAgentState = (
+  seed: AgentStoreSeed,
+  existing?: AgentState | null
+): AgentState => {
+  const size = clampAgentPanelSize(seed.size);
   return {
     ...seed,
     size,
@@ -129,12 +122,12 @@ const createRuntimeAgent = (seed: AgentSeed, existing?: AgentTile | null): Agent
   };
 };
 
-const reducer = (state: CanvasState, action: Action): CanvasState => {
+const reducer = (state: AgentStoreState, action: Action): AgentStoreState => {
   switch (action.type) {
     case "hydrateAgents": {
       const byId = new Map(state.agents.map((agent) => [agent.agentId, agent]));
       const agents = action.agents.map((seed) =>
-        createRuntimeAgent(seed, byId.get(seed.agentId))
+        createRuntimeAgentState(seed, byId.get(seed.agentId))
       );
       const selectedAgentId =
         state.selectedAgentId && agents.some((agent) => agent.agentId === state.selectedAgentId)
@@ -160,7 +153,7 @@ const reducer = (state: CanvasState, action: Action): CanvasState => {
             ? {
                 ...agent,
                 ...action.patch,
-                size: action.patch.size ? clampTileSize(action.patch.size) : agent.size,
+                size: action.patch.size ? clampAgentPanelSize(action.patch.size) : agent.size,
               }
             : agent
         ),
@@ -211,31 +204,29 @@ const reducer = (state: CanvasState, action: Action): CanvasState => {
                   : agent
               ),
       };
-    case "setCanvas":
-      return { ...state, canvas: { ...state.canvas, ...action.patch } };
     default:
       return state;
   }
 };
 
-export const agentCanvasReducer = reducer;
-export const initialAgentCanvasState = initialState;
+export const agentStoreReducer = reducer;
+export const initialAgentStoreState = initialState;
 
-type AgentCanvasContextValue = {
-  state: CanvasState;
+type AgentStoreContextValue = {
+  state: AgentStoreState;
   dispatch: React.Dispatch<Action>;
-  hydrateAgents: (agents: AgentSeed[]) => void;
+  hydrateAgents: (agents: AgentStoreSeed[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 };
 
-const AgentCanvasContext = createContext<AgentCanvasContextValue | null>(null);
+const AgentStoreContext = createContext<AgentStoreContextValue | null>(null);
 
-export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
+export const AgentStoreProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const hydrateAgents = useCallback(
-    (agents: AgentSeed[]) => {
+    (agents: AgentStoreSeed[]) => {
       dispatch({ type: "hydrateAgents", agents });
     },
     [dispatch]
@@ -257,25 +248,25 @@ export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
   );
 
   return (
-    <AgentCanvasContext.Provider value={value}>{children}</AgentCanvasContext.Provider>
+    <AgentStoreContext.Provider value={value}>{children}</AgentStoreContext.Provider>
   );
 };
 
-export const useAgentCanvasStore = () => {
-  const ctx = useContext(AgentCanvasContext);
+export const useAgentStore = () => {
+  const ctx = useContext(AgentStoreContext);
   if (!ctx) {
-    throw new Error("AgentCanvasProvider is missing.");
+    throw new Error("AgentStoreProvider is missing.");
   }
   return ctx;
 };
 
-export const getSelectedAgent = (state: CanvasState): AgentTile | null => {
+export const getSelectedAgent = (state: AgentStoreState): AgentState | null => {
   if (!state.selectedAgentId) return null;
   return state.agents.find((agent) => agent.agentId === state.selectedAgentId) ?? null;
 };
 
 export const getAttentionForAgent = (
-  agent: AgentTile,
+  agent: AgentState,
   selectedAgentId: string | null
 ): AgentAttention => {
   if (agent.status === "error") return "needs-attention";
@@ -286,7 +277,7 @@ export const getAttentionForAgent = (
   return "normal";
 };
 
-export const getFilteredAgents = (state: CanvasState, filter: FocusFilter): AgentTile[] => {
+export const getFilteredAgents = (state: AgentStoreState, filter: FocusFilter): AgentState[] => {
   if (filter === "all") return state.agents;
   if (filter === "running") {
     return state.agents.filter((agent) => agent.status === "running");

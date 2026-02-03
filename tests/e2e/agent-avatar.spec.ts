@@ -22,23 +22,9 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test.describe.skip("canvas mode is parked", () => {
-  test("canvas renders controls when disconnected", async ({ page }) => {
-    await page.goto("/");
-    await page.getByTestId("view-mode-canvas").click();
+test("empty focused view shows zero agents when disconnected", async ({ page }) => {
+  await page.goto("/");
 
-    const pane = page.locator(".react-flow__pane");
-    await expect(pane).toBeVisible();
-
-    const controls = page.locator(".react-flow__controls");
-    await expect(controls).toBeVisible();
-  });
-
-  test("canvas renders minimap when disconnected", async ({ page }) => {
-    await page.goto("/");
-    await page.getByTestId("view-mode-canvas").click();
-
-    const minimap = page.locator(".react-flow__minimap");
-    await expect(minimap).toBeVisible();
-  });
+  await expect(page.getByText("Agents (0)").first()).toBeVisible();
+  await expect(page.locator("[data-agent-panel]")).toHaveCount(0);
 });

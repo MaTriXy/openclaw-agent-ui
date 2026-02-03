@@ -4,7 +4,7 @@ type StudioSettingsFixture = {
   version: 1;
   gateway: { url: string; token: string } | null;
   layouts: Record<string, unknown>;
-  focused: Record<string, { mode: "focused" | "canvas"; filter: string; selectedAgentId: string | null }>;
+  focused: Record<string, { mode: "focused"; filter: string; selectedAgentId: string | null }>;
 };
 
 const DEFAULT_SETTINGS: StudioSettingsFixture = {
@@ -59,7 +59,7 @@ const createStudioRoute = (
           selectedAgentId: null,
         };
         focusedNext[key] = {
-          mode: (value.mode as "focused" | "canvas") ?? existing.mode,
+          mode: (value.mode as "focused") ?? existing.mode,
           filter: (value.filter as string) ?? existing.filter,
           selectedAgentId:
             "selectedAgentId" in value

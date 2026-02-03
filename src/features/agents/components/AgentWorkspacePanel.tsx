@@ -1,6 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentTile as AgentTileType, TileSize } from "@/features/canvas/state/store";
+import type { AgentState as AgentRecord } from "@/features/agents/state/store";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -11,11 +11,10 @@ import {
 } from "@/lib/text/message-extract";
 import { normalizeAgentName } from "@/lib/names/agentNames";
 import { Shuffle } from "lucide-react";
-import { MAX_TILE_HEIGHT, MIN_TILE_SIZE } from "@/lib/canvasTileDefaults";
 import { AgentAvatar } from "./AgentAvatar";
 
-type AgentTileProps = {
-  tile: AgentTileType;
+type AgentWorkspacePanelProps = {
+  agent: AgentRecord;
   isSelected: boolean;
   canSend: boolean;
   onInspect: () => void;
@@ -24,8 +23,6 @@ type AgentTileProps = {
   onSend: (message: string) => void;
   onAvatarShuffle: () => void;
   onNameShuffle: () => void;
-  onResize?: (size: TileSize) => void;
-  onResizeEnd?: (size: TileSize) => void;
 };
 
 const normalizeAssistantDisplayText = (value: string): string => {
@@ -46,8 +43,8 @@ const normalizeAssistantDisplayText = (value: string): string => {
   return normalized.join("\n").trim();
 };
 
-export const AgentTile = ({
-  tile,
+export const AgentWorkspacePanel = ({
+  agent,
   isSelected,
   canSend,
   onInspect,
@@ -56,31 +53,12 @@ export const AgentTile = ({
   onSend,
   onAvatarShuffle,
   onNameShuffle,
-  onResize,
-  onResizeEnd,
-}: AgentTileProps) => {
-  const [nameDraft, setNameDraft] = useState(tile.name);
-  const [draftValue, setDraftValue] = useState(tile.draft);
+}: AgentWorkspacePanelProps) => {
+  const [nameDraft, setNameDraft] = useState(agent.name);
+  const [draftValue, setDraftValue] = useState(agent.draft);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const chatRef = useRef<HTMLDivElement | null>(null);
-  const plainDraftRef = useRef(tile.draft);
-  const resizeStateRef = useRef<{
-    active: boolean;
-    axis: "height" | "width";
-    startX?: number;
-    startY?: number;
-    startWidth?: number;
-    startHeight?: number;
-  } | null>(null);
-  const resizeFrameRef = useRef<number | null>(null);
-  const resizeSizeRef = useRef<TileSize>({
-    width: tile.size.width,
-    height: tile.size.height,
-  });
-  const resizeHandlersRef = useRef<{
-    move: (event: PointerEvent) => void;
-    stop: () => void;
-  } | null>(null);
+  const plainDraftRef = useRef(agent.draft);
 
   const resizeDraft = useCallback(() => {
     const el = draftRef.current;
@@ -96,168 +74,51 @@ export const AgentTile = ({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNameDraft(tile.name);
-  }, [tile.name]);
+    setNameDraft(agent.name);
+  }, [agent.name]);
 
   useEffect(() => {
-    if (tile.draft === plainDraftRef.current) return;
-    plainDraftRef.current = tile.draft;
+    if (agent.draft === plainDraftRef.current) return;
+    plainDraftRef.current = agent.draft;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraftValue(tile.draft);
-  }, [tile.draft]);
+    setDraftValue(agent.draft);
+  }, [agent.draft]);
 
   useEffect(() => {
     resizeDraft();
-  }, [resizeDraft, tile.draft]);
-
-  useEffect(() => {
-    resizeSizeRef.current = {
-      width: tile.size.width,
-      height: tile.size.height,
-    };
-  }, [tile.size.height, tile.size.width]);
-
-  const stopResize = useCallback(() => {
-    if (!resizeStateRef.current?.active) return;
-    resizeStateRef.current = null;
-    if (resizeHandlersRef.current) {
-      window.removeEventListener("pointermove", resizeHandlersRef.current.move);
-      window.removeEventListener("pointerup", resizeHandlersRef.current.stop);
-      window.removeEventListener("pointercancel", resizeHandlersRef.current.stop);
-      resizeHandlersRef.current = null;
-    }
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-    if (resizeFrameRef.current !== null) {
-      cancelAnimationFrame(resizeFrameRef.current);
-      resizeFrameRef.current = null;
-    }
-    if (onResizeEnd) {
-      onResizeEnd(resizeSizeRef.current);
-    }
-  }, [onResizeEnd]);
-
-  const scheduleResize = useCallback(
-    (size: Partial<TileSize>) => {
-      resizeSizeRef.current = {
-        ...resizeSizeRef.current,
-        ...size,
-      };
-      if (resizeFrameRef.current !== null) return;
-      resizeFrameRef.current = requestAnimationFrame(() => {
-        resizeFrameRef.current = null;
-        onResize?.(resizeSizeRef.current);
-      });
-    },
-    [onResize]
-  );
-
-  const startHeightResize = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (!onResize) return;
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      const startY = event.clientY;
-      const startHeight = tile.size.height;
-      resizeStateRef.current = {
-        active: true,
-        axis: "height",
-        startY,
-        startHeight,
-      };
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      const move = (moveEvent: PointerEvent) => {
-        if (!resizeStateRef.current?.active) return;
-        const delta = moveEvent.clientY - startY;
-        const nextHeight = Math.min(
-          MAX_TILE_HEIGHT,
-          Math.max(MIN_TILE_SIZE.height, startHeight + delta)
-        );
-        scheduleResize({ height: nextHeight });
-      };
-      const stop = () => {
-        stopResize();
-      };
-      resizeHandlersRef.current = { move, stop };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", stop);
-      window.addEventListener("pointercancel", stop);
-    },
-    [onResize, scheduleResize, stopResize, tile.size.height]
-  );
-
-  const startWidthResize = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (!onResize) return;
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      const startX = event.clientX;
-      const startWidth = tile.size.width;
-      resizeStateRef.current = {
-        active: true,
-        axis: "width",
-        startX,
-        startWidth,
-      };
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      const move = (moveEvent: PointerEvent) => {
-        if (!resizeStateRef.current?.active) return;
-        const delta = moveEvent.clientX - startX;
-        const nextWidth = Math.max(MIN_TILE_SIZE.width, startWidth + delta);
-        scheduleResize({ width: nextWidth });
-      };
-      const stop = () => {
-        stopResize();
-      };
-      resizeHandlersRef.current = { move, stop };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", stop);
-      window.addEventListener("pointercancel", stop);
-    },
-    [onResize, scheduleResize, stopResize, tile.size.width]
-  );
-
-  useEffect(() => {
-    return () => stopResize();
-  }, [stopResize]);
+  }, [resizeDraft, agent.draft]);
 
   const commitName = async () => {
     const next = normalizeAgentName(nameDraft);
     if (!next) {
-      setNameDraft(tile.name);
+      setNameDraft(agent.name);
       return;
     }
-    if (next === tile.name) {
+    if (next === agent.name) {
       return;
     }
     const ok = await onNameChange(next);
     if (!ok) {
-      setNameDraft(tile.name);
+      setNameDraft(agent.name);
       return;
     }
     setNameDraft(next);
   };
 
   const statusColor =
-    tile.status === "running"
+    agent.status === "running"
       ? "bg-primary text-primary-foreground"
-      : tile.status === "error"
+      : agent.status === "error"
         ? "bg-destructive text-destructive-foreground"
         : "bg-accent text-accent-foreground border border-border shadow-sm";
   const statusLabel =
-    tile.status === "running"
+    agent.status === "running"
       ? "Running"
-      : tile.status === "error"
+      : agent.status === "error"
         ? "Error"
         : "Waiting for direction";
 
-  const liveThinkingTrace = tile.thinkingTrace?.trim() ?? "";
+  const liveThinkingTrace = agent.thinkingTrace?.trim() ?? "";
 
   const chatItems = useMemo(() => {
     const items: Array<
@@ -265,13 +126,13 @@ export const AgentTile = ({
       | { kind: "assistant"; text: string; live?: boolean }
       | { kind: "tool"; text: string }
     > = [];
-    for (const line of tile.outputLines) {
+    for (const line of agent.outputLines) {
       if (!line) continue;
       if (isTraceMarkdown(line)) {
         continue;
       }
       if (isToolMarkdown(line)) {
-        if (!tile.toolCallingEnabled) continue;
+        if (!agent.toolCallingEnabled) continue;
         items.push({ kind: "tool", text: line });
         continue;
       }
@@ -285,7 +146,7 @@ export const AgentTile = ({
       if (!normalizedAssistant) continue;
       items.push({ kind: "assistant", text: normalizedAssistant });
     }
-    const liveStream = tile.streamText?.trim();
+    const liveStream = agent.streamText?.trim();
     if (liveStream) {
       const normalizedStream = normalizeAssistantDisplayText(liveStream);
       if (normalizedStream) {
@@ -294,15 +155,15 @@ export const AgentTile = ({
     }
     return items;
   }, [
-    tile.outputLines,
-    tile.streamText,
-    tile.toolCallingEnabled,
+    agent.outputLines,
+    agent.streamText,
+    agent.toolCallingEnabled,
   ]);
 
   const thinkingTraceSections = useMemo(() => {
-    if (!tile.showThinkingTraces) return [];
+    if (!agent.showThinkingTraces) return [];
     const sections: string[] = [];
-    for (const line of tile.outputLines) {
+    for (const line of agent.outputLines) {
       if (!isTraceMarkdown(line)) continue;
       const text = stripTraceMarkdown(line).trim();
       if (!text) continue;
@@ -313,7 +174,7 @@ export const AgentTile = ({
       sections.push(liveThinkingTrace);
     }
     return sections;
-  }, [liveThinkingTrace, tile.outputLines, tile.showThinkingTraces]);
+  }, [liveThinkingTrace, agent.outputLines, agent.showThinkingTraces]);
 
   const thinkingTraceContent = useMemo(
     () => thinkingTraceSections.join("\n\n"),
@@ -329,26 +190,20 @@ export const AgentTile = ({
     return chatItems.length;
   }, [chatItems, thinkingTraceContent]);
 
-  const avatarSeed = tile.avatarSeed ?? tile.agentId;
-  const resizeHandleClass = isSelected
-    ? "pointer-events-auto opacity-100"
-    : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100";
-
+  const avatarSeed = agent.avatarSeed ?? agent.agentId;
   return (
-    <div data-tile className="group relative flex h-full w-full flex-col">
+    <div data-agent-panel className="group relative flex h-full w-full flex-col">
       <div className="px-4 pt-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="relative">
-              <div data-drag-handle>
-                <AgentAvatar
-                  seed={avatarSeed}
-                  name={tile.name}
-                  avatarUrl={tile.avatarUrl ?? null}
-                  size={96}
-                  isSelected={isSelected}
-                />
-              </div>
+              <AgentAvatar
+                seed={avatarSeed}
+                name={agent.name}
+                avatarUrl={agent.avatarUrl ?? null}
+                size={96}
+                isSelected={isSelected}
+              />
               <button
                 className="nodrag absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm hover:bg-card"
                 type="button"
@@ -381,7 +236,7 @@ export const AgentTile = ({
                       event.currentTarget.blur();
                     }
                     if (event.key === "Escape") {
-                      setNameDraft(tile.name);
+                      setNameDraft(agent.name);
                       event.currentTarget.blur();
                     }
                   }}
@@ -440,11 +295,11 @@ export const AgentTile = ({
                   const showThinkingBefore = index === thinkingInsertIndex;
                   if (item.kind === "user") {
                     return (
-                      <div key={`chat-${tile.agentId}-user-wrap-${index}`} className="contents">
+                      <div key={`chat-${agent.agentId}-user-wrap-${index}`} className="contents">
                         {showThinkingBefore ? (
                           <details
                             className="rounded-md bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
-                            open={tile.status === "running" && Boolean(liveThinkingTrace)}
+                            open={agent.status === "running" && Boolean(liveThinkingTrace)}
                           >
                             <summary className="cursor-pointer select-none font-semibold">
                               Thinking traces
@@ -457,7 +312,7 @@ export const AgentTile = ({
                           </details>
                         ) : null}
                         <div
-                          key={`chat-${tile.agentId}-user-${index}`}
+                          key={`chat-${agent.agentId}-user-${index}`}
                           className="rounded-md bg-muted/70 px-3 py-2 text-foreground"
                         >
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -475,11 +330,11 @@ export const AgentTile = ({
                       ? `${summaryLabel}: ${parsed.label}`
                       : summaryLabel;
                     return (
-                      <div key={`chat-${tile.agentId}-tool-wrap-${index}`} className="contents">
+                      <div key={`chat-${agent.agentId}-tool-wrap-${index}`} className="contents">
                         {showThinkingBefore ? (
                           <details
                             className="rounded-md bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
-                            open={tile.status === "running" && Boolean(liveThinkingTrace)}
+                            open={agent.status === "running" && Boolean(liveThinkingTrace)}
                           >
                             <summary className="cursor-pointer select-none font-semibold">
                               Thinking traces
@@ -492,7 +347,7 @@ export const AgentTile = ({
                           </details>
                         ) : null}
                         <details
-                          key={`chat-${tile.agentId}-tool-${index}`}
+                          key={`chat-${agent.agentId}-tool-${index}`}
                           className="rounded-md bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
                         >
                           <summary className="cursor-pointer select-none font-semibold">
@@ -511,13 +366,13 @@ export const AgentTile = ({
                   }
                   return (
                     <div
-                      key={`chat-${tile.agentId}-assistant-wrap-${index}`}
+                      key={`chat-${agent.agentId}-assistant-wrap-${index}`}
                       className="contents"
                     >
                       {showThinkingBefore ? (
                         <details
                           className="rounded-md bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
-                          open={tile.status === "running" && Boolean(liveThinkingTrace)}
+                          open={agent.status === "running" && Boolean(liveThinkingTrace)}
                         >
                           <summary className="cursor-pointer select-none font-semibold">
                             Thinking traces
@@ -530,7 +385,7 @@ export const AgentTile = ({
                         </details>
                       ) : null}
                       <div
-                        key={`chat-${tile.agentId}-assistant-${index}`}
+                        key={`chat-${agent.agentId}-assistant-${index}`}
                         className={`agent-markdown ${
                           item.live ? "opacity-80" : ""
                         }`}
@@ -545,7 +400,7 @@ export const AgentTile = ({
                 {thinkingTraceContent && thinkingInsertIndex === chatItems.length ? (
                   <details
                     className="rounded-md bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
-                    open={tile.status === "running" && Boolean(liveThinkingTrace)}
+                    open={agent.status === "running" && Boolean(liveThinkingTrace)}
                   >
                     <summary className="cursor-pointer select-none font-semibold">
                       Thinking traces
@@ -579,7 +434,7 @@ export const AgentTile = ({
               if (event.key !== "Enter" || event.shiftKey) return;
               if (event.defaultPrevented) return;
               event.preventDefault();
-              if (!canSend || tile.status === "running") return;
+              if (!canSend || agent.status === "running") return;
               const message = draftValue.trim();
               if (!message) return;
               onSend(message);
@@ -590,29 +445,12 @@ export const AgentTile = ({
             className="rounded-lg border border-transparent bg-primary px-3 py-2 text-[11px] font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
             type="button"
             onClick={() => onSend(draftValue)}
-            disabled={!canSend || tile.status === "running" || !draftValue.trim()}
+            disabled={!canSend || agent.status === "running" || !draftValue.trim()}
           >
             Send
           </button>
         </div>
       </div>
-
-      <button
-        type="button"
-        aria-label="Resize tile"
-        className={`nodrag absolute -bottom-2 left-6 right-6 flex h-4 cursor-row-resize touch-none items-center justify-center transition-opacity ${resizeHandleClass}`}
-        onPointerDown={startHeightResize}
-      >
-        <span className="h-1.5 w-16 rounded-full bg-border shadow-sm" />
-      </button>
-      <button
-        type="button"
-        aria-label="Resize tile width"
-        className={`nodrag absolute -right-2 top-6 bottom-6 flex w-4 cursor-col-resize touch-none items-center justify-center transition-opacity ${resizeHandleClass}`}
-        onPointerDown={startWidthResize}
-      >
-        <span className="h-16 w-1.5 rounded-full bg-border shadow-sm" />
-      </button>
     </div>
   );
 };

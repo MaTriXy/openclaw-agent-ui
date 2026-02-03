@@ -7,7 +7,7 @@ import path from "node:path";
 import { collectAgentIdsAndDeleteArtifacts, deleteDirIfExists } from "@/lib/projects/fs.server";
 import type { ProjectTile } from "@/lib/projects/types";
 import { resolveStateDir, resolveUserPath } from "@/lib/clawdbot/paths";
-import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
+import { resolveStudioDataDir } from "@/lib/projects/worktrees.server";
 
 let tempDir: string | null = null;
 let previousStateDir: string | undefined;
@@ -67,21 +67,21 @@ describe("projectFs", () => {
     expect(resolveStateDir(env, () => home)).toBe(moltbotDir);
   });
 
-  it("resolvesAgentCanvasDirFromEnv", () => {
+  it("resolvesStudioDataDirFromEnv", () => {
     const home = path.join(os.tmpdir(), "clawdbot-test-home");
     const env = { OPENCLAW_STATE_DIR: "~/state-test" } as unknown as NodeJS.ProcessEnv;
-    expect(resolveAgentCanvasDir(env, () => home)).toBe(
+    expect(resolveStudioDataDir(env, () => home)).toBe(
       path.join(home, "state-test", "openclaw-studio")
     );
   });
 
-  it("resolvesAgentCanvasDirPrefersOpenclaw", () => {
+  it("resolvesStudioDataDirPrefersOpenclaw", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawdbot-projectfs-"));
     const home = tempDir;
     const openclawDir = path.join(home, ".openclaw");
     fs.mkdirSync(openclawDir, { recursive: true });
     const env = {} as unknown as NodeJS.ProcessEnv;
-    expect(resolveAgentCanvasDir(env, () => home)).toBe(
+    expect(resolveStudioDataDir(env, () => home)).toBe(
       path.join(openclawDir, "openclaw-studio")
     );
   });

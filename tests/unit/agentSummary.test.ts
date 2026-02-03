@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { getAgentSummaryPatch, getChatSummaryPatch } from "@/features/canvas/state/summary";
+import { getAgentSummaryPatch, getChatSummaryPatch } from "@/features/agents/state/summary";
 
-describe("tile summary reducer", () => {
+describe("agent summary reducer", () => {
   it("updates preview and activity from assistant chat", () => {
     const patch = getChatSummaryPatch(
       {
         runId: "run-1",
-        sessionKey: "agent:main:studio:tile-1",
+        sessionKey: "agent:main:studio:agent-1",
         state: "final",
         message: { role: "assistant", content: "Hello" },
       },

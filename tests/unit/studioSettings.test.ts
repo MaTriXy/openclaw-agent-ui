@@ -54,7 +54,7 @@ describe("studio settings normalization", () => {
     const normalized = normalizeStudioSettings({
       focused: {
         " ws://localhost:18789 ": {
-          mode: "canvas",
+          mode: "focused",
           selectedAgentId: " agent-2 ",
           filter: "running",
         },
@@ -67,7 +67,7 @@ describe("studio settings normalization", () => {
     });
 
     expect(normalized.focused["ws://localhost:18789"]).toEqual({
-      mode: "canvas",
+      mode: "focused",
       selectedAgentId: "agent-2",
       filter: "running",
     });

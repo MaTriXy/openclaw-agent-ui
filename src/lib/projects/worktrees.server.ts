@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { resolveStateDir } from "@/lib/clawdbot/paths";
 import { ensureDir } from "@/lib/fs.server";
 
-export const resolveAgentCanvasDir = (
+export const resolveStudioDataDir = (
   env: NodeJS.ProcessEnv = process.env,
   homedir?: () => string
 ): string => {
@@ -15,7 +15,7 @@ export const resolveAgentCanvasDir = (
   if (fs.existsSync(legacyDir) && !fs.existsSync(nextDir)) {
     const stat = fs.statSync(legacyDir);
     if (!stat.isDirectory()) {
-      throw new Error(`Agent canvas path is not a directory: ${legacyDir}`);
+      throw new Error(`Legacy agent path is not a directory: ${legacyDir}`);
     }
     fs.renameSync(legacyDir, nextDir);
   }
@@ -23,7 +23,7 @@ export const resolveAgentCanvasDir = (
 };
 
 export const resolveAgentWorktreeDir = (projectId: string, agentId: string) => {
-  return path.join(resolveAgentCanvasDir(), "worktrees", projectId, agentId);
+  return path.join(resolveStudioDataDir(), "worktrees", projectId, agentId);
 };
 
 const resolveGitDir = (worktreeDir: string): string => {

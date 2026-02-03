@@ -1,15 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-// (ReactFlowInstance import removed)
-import { CanvasFlow } from "@/features/canvas/components/CanvasFlow";
-import { AgentTile as AgentTileCard } from "@/features/canvas/components/AgentTile";
-import { AgentInspectPanel } from "@/features/canvas/components/AgentInspectPanel";
-import { FleetSidebar } from "@/features/canvas/components/FleetSidebar";
-import { HeaderBar } from "@/features/canvas/components/HeaderBar";
-import { ConnectionPanel } from "@/features/canvas/components/ConnectionPanel";
-import { MIN_TILE_SIZE } from "@/lib/canvasTileDefaults";
-import { screenToWorld, worldToScreen } from "@/features/canvas/lib/transform";
+import { AgentWorkspacePanel } from "@/features/agents/components/AgentWorkspacePanel";
+import { AgentInspectPanel } from "@/features/agents/components/AgentInspectPanel";
+import { FleetSidebar } from "@/features/agents/components/FleetSidebar";
+import { HeaderBar } from "@/features/agents/components/HeaderBar";
+import { ConnectionPanel } from "@/features/agents/components/ConnectionPanel";
+import { MIN_AGENT_PANEL_SIZE } from "@/lib/agentPanelDefaults";
 import {
   extractText,
   extractThinking,
@@ -29,21 +26,21 @@ import { useGatewayConnection } from "@/lib/gateway/useGatewayConnection";
 import type { EventFrame } from "@/lib/gateway/frames";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import {
-  AgentCanvasProvider,
+  AgentStoreProvider,
   getFilteredAgents,
   getSelectedAgent,
   type FocusFilter,
-  useAgentCanvasStore,
-} from "@/features/canvas/state/store";
+  useAgentStore,
+} from "@/features/agents/state/store";
 import {
   type AgentEventPayload,
   type ChatEventPayload,
   getAgentSummaryPatch,
   getChatSummaryPatch,
-} from "@/features/canvas/state/summary";
+} from "@/features/agents/state/summary";
 import { fetchCronJobs } from "@/lib/projects/client";
 import { createRandomAgentName, normalizeAgentName } from "@/lib/names/agentNames";
-import type { AgentSeed, AgentTile, CanvasTransform } from "@/features/canvas/state/store";
+import type { AgentStoreSeed, AgentState } from "@/features/agents/state/store";
 import type { CronJobSummary } from "@/lib/projects/types";
 import { logger } from "@/lib/logger";
 import { renameGatewayAgent, deleteGatewayAgent } from "@/lib/gateway/agentConfig";
@@ -60,7 +57,6 @@ import {
   type StudioAgentLayout,
 } from "@/lib/studio/settings";
 import { generateUUID } from "@/lib/gateway/openclaw/uuid";
-// (CANVAS_BASE_ZOOM import removed)
 
 type ChatHistoryMessage = Record<string, unknown>;
 
@@ -140,8 +136,7 @@ type StatusSummary = {
 
 const SPECIAL_UPDATE_HEARTBEAT_RE = /\bheartbeat\b/i;
 const SPECIAL_UPDATE_CRON_RE = /\bcron\b/i;
-const DEFAULT_TILE_GAP = { x: 48, y: 56 };
-const CANVAS_MODE_ENABLED = false;
+const DEFAULT_AGENT_PANEL_GAP = { x: 48, y: 56 };
 
 const rectsOverlap = (
   a: { x: number; y: number; width: number; height: number },
@@ -289,7 +284,6 @@ const buildMissingAgentLayouts = (params: {
   avatarSeedByAgent?: Record<string, string | null>;
   viewportSize: { width: number; height: number };
   headerOffset: number;
-  canvas: CanvasTransform;
   defaultSize?: { width: number; height: number };
 }) => {
   const layouts: Record<string, StudioAgentLayout> = {};
@@ -302,18 +296,17 @@ const buildMissingAgentLayouts = (params: {
   }));
   const sizeByAgent = params.sizeByAgent ?? {};
   const avatarSeedByAgent = params.avatarSeedByAgent ?? {};
-  const fallbackSize = params.defaultSize ?? MIN_TILE_SIZE;
-  const zoom = params.canvas.zoom;
+  const fallbackSize = params.defaultSize ?? MIN_AGENT_PANEL_SIZE;
   const sizes = params.agentIds.map((agentId) => sizeByAgent[agentId] ?? fallbackSize);
   const maxWidth = Math.max(fallbackSize.width, ...sizes.map((size) => size.width));
   const maxHeight = Math.max(fallbackSize.height, ...sizes.map((size) => size.height));
-  const stepX = maxWidth * zoom + DEFAULT_TILE_GAP.x;
-  const stepY = maxHeight * zoom + DEFAULT_TILE_GAP.y;
+  const stepX = maxWidth + DEFAULT_AGENT_PANEL_GAP.x;
+  const stepY = maxHeight + DEFAULT_AGENT_PANEL_GAP.y;
   const safeX = 32;
   const safeY = Math.max(32, params.headerOffset + 24);
   const availableWidth =
     params.viewportSize.width > 0 ? params.viewportSize.width - safeX * 2 : stepX;
-  const columns = Math.max(1, Math.floor((availableWidth + DEFAULT_TILE_GAP.x) / stepX));
+  const columns = Math.max(1, Math.floor((availableWidth + DEFAULT_AGENT_PANEL_GAP.x) / stepX));
   const isOccupied = (rect: { x: number; y: number; width: number; height: number }) =>
     occupiedRects.some((other) => rectsOverlap(rect, other, 24));
 
@@ -328,7 +321,7 @@ const buildMissingAgentLayouts = (params: {
         x: safeX + col * stepX,
         y: safeY + row * stepY,
       };
-      const position = screenToWorld(params.canvas, screen);
+      const position = screen;
       const rect = { x: position.x, y: position.y, width: size.width, height: size.height };
       if (isOccupied(rect)) continue;
       layouts[agentId] = {
@@ -386,17 +379,17 @@ const mergeHistoryWithPending = (historyLines: string[], currentLines: string[])
   return merged;
 };
 
-const findAgentBySessionKey = (agents: AgentTile[], sessionKey: string): string | null => {
+const findAgentBySessionKey = (agents: AgentState[], sessionKey: string): string | null => {
   const exact = agents.find((agent) => isSameSessionKey(agent.sessionKey, sessionKey));
   return exact ? exact.agentId : null;
 };
 
-const findAgentByRunId = (agents: AgentTile[], runId: string): string | null => {
+const findAgentByRunId = (agents: AgentState[], runId: string): string | null => {
   const match = agents.find((agent) => agent.runId === runId);
   return match ? match.agentId : null;
 };
 
-const AgentCanvasPage = () => {
+const AgentStudioPage = () => {
   const {
     client,
     status,
@@ -409,7 +402,7 @@ const AgentCanvasPage = () => {
     setToken,
   } = useGatewayConnection();
 
-  const { state, dispatch, hydrateAgents, setError, setLoading } = useAgentCanvasStore();
+  const { state, dispatch, hydrateAgents, setError, setLoading } = useAgentStore();
   const [showConnectionPanel, setShowConnectionPanel] = useState(false);
   const [focusFilter, setFocusFilter] = useState<FocusFilter>("all");
   const [focusedPreferencesLoaded, setFocusedPreferencesLoaded] = useState(false);
@@ -417,7 +410,6 @@ const AgentCanvasPage = () => {
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const stateRef = useRef(state);
   const summaryRefreshRef = useRef<number | null>(null);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
@@ -449,13 +441,13 @@ const AgentCanvasPage = () => {
       : null;
     return selectedInFilter ?? filteredAgents[0] ?? null;
   }, [filteredAgents, selectedAgent]);
-  const inspectTile = useMemo(() => {
+  const inspectAgent = useMemo(() => {
     if (!inspectAgentId) return null;
     return agents.find((entry) => entry.agentId === inspectAgentId) ?? null;
   }, [agents, inspectAgentId]);
   const faviconSeed = useMemo(() => {
-    const firstTile = agents[0];
-    const seed = firstTile?.avatarSeed ?? firstTile?.agentId ?? "";
+    const firstAgent = agents[0];
+    const seed = firstAgent?.avatarSeed ?? firstAgent?.agentId ?? "";
     return seed.trim() || null;
   }, [agents]);
   const faviconHref = useMemo(
@@ -581,23 +573,23 @@ const AgentCanvasPage = () => {
     toolLinesSeenRef.current.delete(runId);
   }, []);
 
-  const resolveCronJobForTile = useCallback((jobs: CronJobSummary[], tile: AgentTile) => {
+  const resolveCronJobForAgent = useCallback((jobs: CronJobSummary[], agent: AgentState) => {
     if (!jobs.length) return null;
-    const agentId = tile.agentId?.trim();
+    const agentId = agent.agentId?.trim();
     const filtered = agentId ? jobs.filter((job) => job.agentId === agentId) : jobs;
     const active = filtered.length > 0 ? filtered : jobs;
     return [...active].sort((a, b) => b.updatedAtMs - a.updatedAtMs)[0] ?? null;
   }, []);
 
   const updateSpecialLatestUpdate = useCallback(
-    async (agentId: string, tile: AgentTile, message: string) => {
+    async (agentId: string, agent: AgentState, message: string) => {
       const key = agentId;
       const kind = resolveSpecialUpdateKind(message);
       if (!kind) {
-        if (tile.latestOverride || tile.latestOverrideKind) {
+        if (agent.latestOverride || agent.latestOverrideKind) {
           dispatch({
             type: "updateAgent",
-            agentId: tile.agentId,
+            agentId: agent.agentId,
             patch: { latestOverride: null, latestOverrideKind: null },
           });
         }
@@ -608,11 +600,11 @@ const AgentCanvasPage = () => {
       try {
         if (kind === "heartbeat") {
           const resolvedId =
-            tile.agentId?.trim() || parseAgentIdFromSessionKey(tile.sessionKey);
+            agent.agentId?.trim() || parseAgentIdFromSessionKey(agent.sessionKey);
           if (!resolvedId) {
             dispatch({
               type: "updateAgent",
-              agentId: tile.agentId,
+              agentId: agent.agentId,
               patch: { latestOverride: null, latestOverrideKind: null },
             });
             return;
@@ -636,7 +628,7 @@ const AgentCanvasPage = () => {
           if (!sessionKey) {
             dispatch({
               type: "updateAgent",
-              agentId: tile.agentId,
+              agentId: agent.agentId,
               patch: { latestOverride: null, latestOverrideKind: null },
             });
             return;
@@ -648,7 +640,7 @@ const AgentCanvasPage = () => {
           const content = findLatestHeartbeatResponse(history.messages ?? []) ?? "";
           dispatch({
             type: "updateAgent",
-            agentId: tile.agentId,
+            agentId: agent.agentId,
             patch: {
               latestOverride: content || null,
               latestOverrideKind: content ? "heartbeat" : null,
@@ -657,11 +649,11 @@ const AgentCanvasPage = () => {
           return;
         }
         const cronResult = await fetchCronJobs();
-        const job = resolveCronJobForTile(cronResult.jobs, tile);
+        const job = resolveCronJobForAgent(cronResult.jobs, agent);
         const content = job ? buildCronDisplay(job) : "";
         dispatch({
           type: "updateAgent",
-          agentId: tile.agentId,
+          agentId: agent.agentId,
           patch: {
             latestOverride: content || null,
             latestOverrideKind: content ? "cron" : null,
@@ -675,102 +667,15 @@ const AgentCanvasPage = () => {
         specialUpdateInFlightRef.current.delete(key);
       }
     },
-    [client, dispatch, resolveCronJobForTile]
+    [client, dispatch, resolveCronJobForAgent]
   );
 
   const refreshHeartbeatLatestUpdate = useCallback(() => {
     const agents = stateRef.current.agents;
-    for (const tile of agents) {
-      void updateSpecialLatestUpdate(tile.agentId, tile, "heartbeat");
+    for (const agent of agents) {
+      void updateSpecialLatestUpdate(agent.agentId, agent, "heartbeat");
     }
   }, [updateSpecialLatestUpdate]);
-
-  const computeNewTilePosition = useCallback(
-    (tileSize: { width: number; height: number }) => {
-      if (agents.length === 0) {
-        return { x: 80, y: 200 };
-      }
-
-      if (viewportSize.width === 0 || viewportSize.height === 0) {
-        const offset = agents.length * 36;
-        return { x: 80 + offset, y: 200 + offset };
-      }
-
-      const safeTop = 140;
-      const edgePadding = 24;
-      const step = 80;
-      const maxRings = 12;
-      const zoom = state.canvas.zoom;
-
-      const effectiveSize = {
-        width: Math.max(tileSize.width, MIN_TILE_SIZE.width),
-        height: Math.max(tileSize.height, MIN_TILE_SIZE.height),
-      };
-
-      const minCenterY = safeTop + (effectiveSize.height * zoom) / 2;
-      const screenCenter = {
-        x: viewportSize.width / 2,
-        y: Math.max(viewportSize.height / 2, minCenterY),
-      };
-      const worldCenter = screenToWorld(state.canvas, screenCenter);
-      const base = {
-        x: worldCenter.x - effectiveSize.width / 2,
-        y: worldCenter.y - effectiveSize.height / 2,
-      };
-
-      const candidateFits = (candidate: { x: number; y: number }) => {
-        const screen = worldToScreen(state.canvas, candidate);
-        const tileWidth = effectiveSize.width * zoom;
-        const tileHeight = effectiveSize.height * zoom;
-        return (
-          screen.x >= edgePadding &&
-          screen.y >= safeTop &&
-          screen.x + tileWidth <= viewportSize.width - edgePadding &&
-          screen.y + tileHeight <= viewportSize.height - edgePadding
-        );
-      };
-
-      const candidateOverlaps = (candidate: { x: number; y: number }) => {
-        const rect = {
-          x: candidate.x,
-          y: candidate.y,
-          width: effectiveSize.width,
-          height: effectiveSize.height,
-        };
-        return agents.some((tile) =>
-          rectsOverlap(
-            rect,
-            {
-              x: tile.position.x,
-              y: tile.position.y,
-              width: Math.max(tile.size.width, MIN_TILE_SIZE.width),
-              height: Math.max(tile.size.height, MIN_TILE_SIZE.height),
-            },
-            24
-          )
-        );
-      };
-
-      for (let ring = 0; ring <= maxRings; ring += 1) {
-        for (let dx = -ring; dx <= ring; dx += 1) {
-          for (let dy = -ring; dy <= ring; dy += 1) {
-            if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dy) !== ring) {
-              continue;
-            }
-            const candidate = {
-              x: base.x + dx * step,
-              y: base.y + dy * step,
-            };
-            if (!candidateFits(candidate)) continue;
-            if (!candidateOverlaps(candidate)) return candidate;
-          }
-        }
-      }
-
-      return base;
-    },
-    [agents, state.canvas, viewportSize]
-  );
 
   const resolveAgentName = useCallback((agent: AgentsListResult["agents"][number]) => {
     const fromList = typeof agent.name === "string" ? agent.name.trim() : "";
@@ -821,13 +726,12 @@ const AgentCanvasPage = () => {
               occupiedLayouts: layout,
               viewportSize: viewportSizeRef.current,
               headerOffset: headerOffsetRef.current,
-              canvas: stateRef.current.canvas,
             })
           : {};
-      const seeds: AgentSeed[] = agentsResult.agents.map((agent, index) => {
+      const seeds: AgentStoreSeed[] = agentsResult.agents.map((agent, index) => {
         const layoutEntry = layout?.[agent.id] ?? computedLayouts[agent.id];
         const position = layoutEntry?.position ?? { x: 80 + index * 36, y: 200 + index * 36 };
-        const size = layoutEntry?.size ?? MIN_TILE_SIZE;
+        const size = layoutEntry?.size ?? MIN_AGENT_PANEL_SIZE;
         const avatarSeed = layoutEntry?.avatarSeed ?? agent.id;
         const avatarUrl = resolveAgentAvatarUrl(agent);
         const name = resolveAgentName(agent);
@@ -996,10 +900,10 @@ const AgentCanvasPage = () => {
   }, [inspectAgentId, state.selectedAgentId]);
 
   useEffect(() => {
-    if (inspectAgentId && !inspectTile) {
+    if (inspectAgentId && !inspectAgent) {
       setInspectAgentId(null);
     }
-  }, [inspectAgentId, inspectTile]);
+  }, [inspectAgentId, inspectAgent]);
 
   useEffect(() => {
     if (status !== "connected") {
@@ -1063,7 +967,7 @@ const AgentCanvasPage = () => {
     const sessionKeys = Array.from(
       new Set(
         tiles
-          .map((tile) => tile.sessionKey)
+          .map((agent) => agent.sessionKey)
           .filter((key): key is string => typeof key === "string" && key.trim().length > 0)
       )
     ).slice(0, 64);
@@ -1093,13 +997,13 @@ const AgentCanvasPage = () => {
       for (const group of statusSummary.sessions?.byAgent ?? []) {
         addActivity(group.recent);
       }
-      for (const tile of tiles) {
-        const patch: Partial<AgentTile> = {};
-        const activity = activityByKey.get(tile.sessionKey);
+      for (const agent of tiles) {
+        const patch: Partial<AgentState> = {};
+        const activity = activityByKey.get(agent.sessionKey);
         if (typeof activity === "number") {
           patch.lastActivityAt = activity;
         }
-        const preview = previewMap.get(tile.sessionKey);
+        const preview = previewMap.get(agent.sessionKey);
         if (preview?.items?.length) {
           const lastAssistant = [...preview.items]
             .reverse()
@@ -1118,7 +1022,7 @@ const AgentCanvasPage = () => {
         if (Object.keys(patch).length > 0) {
           dispatch({
             type: "updateAgent",
-            agentId: tile.agentId,
+            agentId: agent.agentId,
             patch,
           });
         }
@@ -1160,33 +1064,21 @@ const AgentCanvasPage = () => {
 
   useEffect(() => {
     const update = () => {
-      const node = viewportRef.current;
-      if (node) {
-        const rect = node.getBoundingClientRect();
-        setViewportSize({ width: rect.width, height: rect.height });
-        return;
-      }
       setViewportSize({
         width: window.innerWidth,
         height: window.innerHeight,
       });
     };
     update();
-    const node = viewportRef.current;
-    const observer = node ? new ResizeObserver(update) : null;
-    if (node && observer) {
-      observer.observe(node);
-    }
     window.addEventListener("resize", update);
     return () => {
-      observer?.disconnect();
       window.removeEventListener("resize", update);
     };
   }, []);
 
   useEffect(() => {
     if (!state.selectedAgentId) return;
-    if (agents.some((tile) => tile.agentId === state.selectedAgentId)) return;
+    if (agents.some((agent) => agent.agentId === state.selectedAgentId)) return;
     dispatch({ type: "selectAgent", agentId: null });
   }, [agents, dispatch, state.selectedAgentId]);
 
@@ -1197,23 +1089,23 @@ const AgentCanvasPage = () => {
   }, [dispatch, focusedAgent, state.selectedAgentId]);
 
   useEffect(() => {
-    for (const tile of agents) {
-      const lastMessage = tile.lastUserMessage?.trim() ?? "";
+    for (const agent of agents) {
+      const lastMessage = agent.lastUserMessage?.trim() ?? "";
       const kind = resolveSpecialUpdateKind(lastMessage);
-      const key = tile.agentId;
+      const key = agent.agentId;
       const marker = kind === "heartbeat" ? `${lastMessage}:${heartbeatTick}` : lastMessage;
       const previous = specialUpdateRef.current.get(key);
       if (previous === marker) continue;
       specialUpdateRef.current.set(key, marker);
-      void updateSpecialLatestUpdate(tile.agentId, tile, lastMessage);
+      void updateSpecialLatestUpdate(agent.agentId, agent, lastMessage);
     }
   }, [agents, heartbeatTick, updateSpecialLatestUpdate]);
 
-  const loadTileHistory = useCallback(
+  const loadAgentHistory = useCallback(
     async (agentId: string) => {
-      const tile = stateRef.current.agents.find((entry) => entry.agentId === agentId);
-      const sessionKey = tile?.sessionKey?.trim();
-      if (!tile || !sessionKey) return;
+      const agent = stateRef.current.agents.find((entry) => entry.agentId === agentId);
+      const sessionKey = agent?.sessionKey?.trim();
+      if (!agent || !sessionKey) return;
       if (historyInFlightRef.current.has(sessionKey)) return;
 
       historyInFlightRef.current.add(sessionKey);
@@ -1234,14 +1126,14 @@ const AgentCanvasPage = () => {
           });
           return;
         }
-        const currentLines = tile.outputLines;
+        const currentLines = agent.outputLines;
         const mergedLines = mergeHistoryWithPending(lines, currentLines);
         const isSame =
           mergedLines.length === currentLines.length &&
           mergedLines.every((line, index) => line === currentLines[index]);
         if (isSame) {
-          const patch: Partial<AgentTile> = { historyLoadedAt: loadedAt };
-          if (!tile.runId && tile.status === "running" && lastRole === "assistant") {
+          const patch: Partial<AgentState> = { historyLoadedAt: loadedAt };
+          if (!agent.runId && agent.status === "running" && lastRole === "assistant") {
             patch.status = "idle";
             patch.runId = null;
             patch.streamText = null;
@@ -1254,14 +1146,14 @@ const AgentCanvasPage = () => {
           });
           return;
         }
-        const patch: Partial<AgentTile> = {
+        const patch: Partial<AgentState> = {
           outputLines: mergedLines,
           lastResult: lastAssistant ?? null,
           ...(lastAssistant ? { latestPreview: lastAssistant } : {}),
           ...(lastUser ? { lastUserMessage: lastUser } : {}),
           historyLoadedAt: loadedAt,
         };
-        if (!tile.runId && tile.status === "running" && lastRole === "assistant") {
+        if (!agent.runId && agent.status === "running" && lastRole === "assistant") {
           patch.status = "idle";
           patch.runId = null;
           patch.streamText = null;
@@ -1282,7 +1174,7 @@ const AgentCanvasPage = () => {
     [client, dispatch]
   );
 
-  const handleInspectTile = useCallback(
+  const handleInspectAgent = useCallback(
     (agentId: string) => {
       setInspectAgentId(agentId);
       dispatch({ type: "selectAgent", agentId });
@@ -1292,17 +1184,17 @@ const AgentCanvasPage = () => {
 
   const handleDeleteAgent = useCallback(
     async (agentId: string) => {
-      const tile = agents.find((entry) => entry.agentId === agentId);
-      if (!tile) return;
+      const agent = agents.find((entry) => entry.agentId === agentId);
+      if (!agent) return;
       const confirmed = window.confirm(
-        `Delete ${tile.name}? This removes the agent from the gateway config.`
+        `Delete ${agent.name}? This removes the agent from the gateway config.`
       );
       if (!confirmed) return;
       try {
         await deleteGatewayAgent({
           client,
           agentId,
-          sessionKey: tile.sessionKey,
+          sessionKey: agent.sessionKey,
         });
         setInspectAgentId(null);
         await loadAgents();
@@ -1314,37 +1206,37 @@ const AgentCanvasPage = () => {
     [agents, client, loadAgents, setError]
   );
 
-  const shouldAutoLoadHistory = useCallback((tile: AgentTile) => {
-    if (!tile.sessionKey?.trim()) return false;
-    return !tile.historyLoadedAt;
+  const shouldAutoLoadHistory = useCallback((agent: AgentState) => {
+    if (!agent.sessionKey?.trim()) return false;
+    return !agent.historyLoadedAt;
   }, []);
 
   useEffect(() => {
     if (status !== "connected") return;
-    for (const tile of agents) {
-      if (!shouldAutoLoadHistory(tile)) continue;
-      void loadTileHistory(tile.agentId);
+    for (const agent of agents) {
+      if (!shouldAutoLoadHistory(agent)) continue;
+      void loadAgentHistory(agent.agentId);
     }
-  }, [agents, loadTileHistory, shouldAutoLoadHistory, status]);
+  }, [agents, loadAgentHistory, shouldAutoLoadHistory, status]);
 
   useEffect(() => {
     if (status !== "connected") return;
-    const hasRunning = agents.some((tile) => tile.status === "running");
+    const hasRunning = agents.some((agent) => agent.status === "running");
     if (!hasRunning) return;
-    for (const tile of stateRef.current.agents) {
-      if (tile.status !== "running") continue;
-      void loadTileHistory(tile.agentId);
+    for (const agent of stateRef.current.agents) {
+      if (agent.status !== "running") continue;
+      void loadAgentHistory(agent.agentId);
     }
     const timer = window.setInterval(() => {
-      for (const tile of stateRef.current.agents) {
-        if (tile.status !== "running") continue;
-        void loadTileHistory(tile.agentId);
+      for (const agent of stateRef.current.agents) {
+        if (agent.status !== "running") continue;
+        void loadAgentHistory(agent.agentId);
       }
     }, 1500);
     return () => {
       window.clearInterval(timer);
     };
-  }, [agents, loadTileHistory, status]);
+  }, [agents, loadAgentHistory, status]);
 
   const handleSend = useCallback(
     async (agentId: string, sessionKey: string, message: string) => {
@@ -1353,12 +1245,12 @@ const AgentCanvasPage = () => {
       const isResetCommand = /^\/(reset|new)(\s|$)/i.test(trimmed);
       const runId = crypto.randomUUID();
       assistantStreamByRunRef.current.delete(runId);
-      const tile = agents.find((entry) => entry.agentId === agentId);
-      if (!tile) {
+      const agent = agents.find((entry) => entry.agentId === agentId);
+      if (!agent) {
         dispatch({
           type: "appendOutput",
           agentId,
-          line: "Error: Tile not found.",
+          line: "Error: Agent not found.",
         });
         return;
       }
@@ -1389,13 +1281,13 @@ const AgentCanvasPage = () => {
       });
       try {
         if (!sessionKey) {
-          throw new Error("Missing session key for tile.");
+          throw new Error("Missing session key for agent.");
         }
-        if (!tile.sessionSettingsSynced) {
+        if (!agent.sessionSettingsSynced) {
           await client.call("sessions.patch", {
             key: sessionKey,
-            model: tile.model ?? null,
-            thinkingLevel: tile.thinkingLevel ?? null,
+            model: agent.model ?? null,
+            thinkingLevel: agent.thinkingLevel ?? null,
           });
           dispatch({
             type: "updateAgent",
@@ -1517,7 +1409,7 @@ const AgentCanvasPage = () => {
       }
       const agentId = findAgentBySessionKey(state.agents, payload.sessionKey);
       if (!agentId) return;
-      const tile = state.agents.find((entry) => entry.agentId === agentId);
+      const agent = state.agents.find((entry) => entry.agentId === agentId);
       const summaryPatch = getChatSummaryPatch(payload);
       if (summaryPatch) {
         dispatch({
@@ -1595,7 +1487,7 @@ const AgentCanvasPage = () => {
             message: summarizeThinkingMessage(payload.message ?? payload),
           });
         }
-        const thinkingText = nextThinking ?? tile?.thinkingTrace ?? null;
+        const thinkingText = nextThinking ?? agent?.thinkingTrace ?? null;
         const thinkingLine = thinkingText ? formatThinkingMarkdown(thinkingText) : "";
         if (thinkingLine) {
           dispatch({
@@ -1618,10 +1510,10 @@ const AgentCanvasPage = () => {
         if (
           !thinkingLine &&
           role === "assistant" &&
-          tile &&
-          !tile.outputLines.some((line) => isTraceMarkdown(line.trim()))
+          agent &&
+          !agent.outputLines.some((line) => isTraceMarkdown(line.trim()))
         ) {
-          void loadTileHistory(agentId);
+          void loadAgentHistory(agentId);
         }
         if (!isToolRole && typeof nextText === "string") {
           dispatch({
@@ -1635,8 +1527,8 @@ const AgentCanvasPage = () => {
             patch: { lastResult: nextText },
           });
         }
-        if (tile?.lastUserMessage && !tile.latestOverride) {
-          void updateSpecialLatestUpdate(agentId, tile, tile.lastUserMessage);
+        if (agent?.lastUserMessage && !agent.latestOverride) {
+          void updateSpecialLatestUpdate(agentId, agent, agent.lastUserMessage);
         }
         dispatch({
           type: "updateAgent",
@@ -1687,7 +1579,7 @@ const AgentCanvasPage = () => {
   }, [
     client,
     dispatch,
-    loadTileHistory,
+    loadAgentHistory,
     state.agents,
     summarizeThinkingMessage,
     markToolLineSeen,
@@ -1705,8 +1597,8 @@ const AgentCanvasPage = () => {
         : null;
       const match = directMatch ?? findAgentByRunId(state.agents, payload.runId);
       if (!match) return;
-      const tile = state.agents.find((entry) => entry.agentId === match);
-      if (!tile) return;
+      const agent = state.agents.find((entry) => entry.agentId === match);
+      if (!agent) return;
       dispatch({
         type: "markActivity",
         agentId: match,
@@ -1731,7 +1623,7 @@ const AgentCanvasPage = () => {
           assistantStreamByRunRef.current.set(payload.runId, mergedRaw);
         }
         const liveThinking = resolveThinkingFromAgentStream(data, mergedRaw);
-        const patch: Partial<AgentTile> = {
+        const patch: Partial<AgentState> = {
           status: "running",
           runId: payload.runId,
           lastActivityAt: Date.now(),
@@ -1748,7 +1640,7 @@ const AgentCanvasPage = () => {
           const visibleText = extractText({ role: "assistant", content: mergedRaw }) ?? mergedRaw;
           const cleaned = stripUiMetadata(visibleText);
           if (cleaned) {
-            if (!hasChatEvents || !tile.streamText?.trim()) {
+            if (!hasChatEvents || !agent.streamText?.trim()) {
               dispatch({
                 type: "setStream",
                 agentId: match,
@@ -1835,10 +1727,10 @@ const AgentCanvasPage = () => {
         return;
       }
       if (phase === "end") {
-        if (tile.runId && tile.runId !== payload.runId) return;
+        if (agent.runId && agent.runId !== payload.runId) return;
         assistantStreamByRunRef.current.delete(payload.runId);
         if (!hasChatEvents) {
-          const finalText = tile.streamText?.trim();
+          const finalText = agent.streamText?.trim();
           if (finalText) {
             dispatch({
               type: "appendOutput",
@@ -1868,7 +1760,7 @@ const AgentCanvasPage = () => {
         return;
       }
       if (phase === "error") {
-        if (tile.runId && tile.runId !== payload.runId) return;
+        if (agent.runId && agent.runId !== payload.runId) return;
         assistantStreamByRunRef.current.delete(payload.runId);
         chatRunSeenRef.current.delete(payload.runId);
         clearToolLinesSeen(payload.runId);
@@ -1886,8 +1778,6 @@ const AgentCanvasPage = () => {
       }
     });
   }, [client, clearToolLinesSeen, dispatch, markToolLineSeen, state.agents]);
-
-  // Zoom controls are available in the bottom-right of the canvas.
 
   const persistAgentLayout = useCallback(
     async (
@@ -1914,14 +1804,14 @@ const AgentCanvasPage = () => {
 
   const handleRenameAgent = useCallback(
     async (agentId: string, name: string) => {
-      const tile = agents.find((entry) => entry.agentId === agentId);
-      if (!tile) return false;
+      const agent = agents.find((entry) => entry.agentId === agentId);
+      if (!agent) return false;
       try {
         await renameGatewayAgent({
           client,
           agentId,
           name,
-          sessionKey: tile.sessionKey,
+          sessionKey: agent.sessionKey,
         });
         dispatch({
           type: "updateAgent",
@@ -1940,8 +1830,8 @@ const AgentCanvasPage = () => {
 
   const handleAvatarShuffle = useCallback(
     async (agentId: string) => {
-      const tile = agents.find((entry) => entry.agentId === agentId);
-      if (!tile) return;
+      const agent = agents.find((entry) => entry.agentId === agentId);
+      if (!agent) return;
       const avatarSeed = crypto.randomUUID();
       dispatch({
         type: "updateAgent",
@@ -1949,8 +1839,8 @@ const AgentCanvasPage = () => {
         patch: { avatarSeed },
       });
       await persistAgentLayout(agentId, {
-        position: tile.position,
-        size: tile.size,
+        position: agent.position,
+        size: agent.size,
         avatarSeed,
       });
     },
@@ -1964,82 +1854,6 @@ const AgentCanvasPage = () => {
       await handleRenameAgent(agentId, name);
     },
     [handleRenameAgent]
-  );
-
-  const handleCleanUpLayout = useCallback(async () => {
-    if (!gatewayUrl.trim()) return;
-    if (agents.length === 0) return;
-    const sizeByAgent: Record<string, { width: number; height: number }> = {};
-    const avatarSeedByAgent: Record<string, string | null> = {};
-    const agentIds = agents.map((tile) => {
-      sizeByAgent[tile.agentId] = { width: tile.size.width, height: tile.size.height };
-      avatarSeedByAgent[tile.agentId] = tile.avatarSeed ?? null;
-      return tile.agentId;
-    });
-    const layouts = buildMissingAgentLayouts({
-      agentIds,
-      viewportSize: viewportSizeRef.current,
-      headerOffset: headerOffsetRef.current,
-      canvas: stateRef.current.canvas,
-      sizeByAgent,
-      avatarSeedByAgent,
-    });
-    if (Object.keys(layouts).length === 0) return;
-    for (const [agentId, layout] of Object.entries(layouts)) {
-      dispatch({
-        type: "updateAgent",
-        agentId,
-        patch: {
-          position: layout.position,
-          size: layout.size,
-        },
-      });
-    }
-    try {
-      await updateStudioSettings({
-        layouts: {
-          [gatewayUrl.trim()]: { agents: layouts },
-        },
-      });
-    } catch (err) {
-      logger.error("Failed to save clean-up layout.", err);
-    }
-  }, [agents, dispatch, gatewayUrl, updateStudioSettings]);
-
-  const handleMoveTile = useCallback(
-    (agentId: string, position: { x: number; y: number }) => {
-      const tile = agents.find((entry) => entry.agentId === agentId);
-      if (!tile) return;
-      dispatch({
-        type: "updateAgent",
-        agentId,
-        patch: { position },
-      });
-      void persistAgentLayout(agentId, {
-        position,
-        size: tile.size,
-        avatarSeed: tile.avatarSeed ?? null,
-      });
-    },
-    [agents, dispatch, persistAgentLayout]
-  );
-
-  const handleResizeTile = useCallback(
-    (agentId: string, size: { width: number; height: number }) => {
-      const tile = agents.find((entry) => entry.agentId === agentId);
-      if (!tile) return;
-      dispatch({
-        type: "updateAgent",
-        agentId,
-        patch: { size },
-      });
-      void persistAgentLayout(agentId, {
-        position: tile.position,
-        size,
-        avatarSeed: tile.avatarSeed ?? null,
-      });
-    },
-    [agents, dispatch, persistAgentLayout]
   );
 
   const handleDraftChange = useCallback(
@@ -2057,26 +1871,6 @@ const AgentCanvasPage = () => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background">
-      {CANVAS_MODE_ENABLED ? (
-        <CanvasFlow
-          tiles={agents}
-          transform={state.canvas}
-          viewportRef={viewportRef}
-          selectedTileId={state.selectedAgentId}
-          canSend={status === "connected"}
-          onSelectTile={(id) => dispatch({ type: "selectAgent", agentId: id })}
-          onMoveTile={handleMoveTile}
-          onResizeTile={handleResizeTile}
-          onRenameTile={handleRenameAgent}
-          onDraftChange={handleDraftChange}
-          onSend={handleSend}
-          onAvatarShuffle={handleAvatarShuffle}
-          onNameShuffle={handleNameShuffle}
-          onInspectTile={handleInspectTile}
-          onUpdateTransform={(patch) => dispatch({ type: "setCanvas", patch })}
-        />
-      ) : null}
-
       <div className="relative z-10 flex h-full flex-col gap-4 p-4 md:p-6">
         <div ref={headerRef} className="w-full">
           <HeaderBar
@@ -2135,11 +1929,11 @@ const AgentCanvasPage = () => {
             data-testid="focused-agent-panel"
           >
             {focusedAgent ? (
-              <AgentTileCard
-                tile={focusedAgent}
+              <AgentWorkspacePanel
+                agent={focusedAgent}
                 isSelected={false}
                 canSend={status === "connected"}
-                onInspect={() => handleInspectTile(focusedAgent.agentId)}
+                onInspect={() => handleInspectAgent(focusedAgent.agentId)}
                 onNameChange={(name) =>
                   handleRenameAgent(focusedAgent.agentId, name)
                 }
@@ -2164,44 +1958,31 @@ const AgentCanvasPage = () => {
               </div>
             )}
           </div>
-          {inspectTile ? (
+          {inspectAgent ? (
             <div className="glass-panel min-h-0 w-full shrink-0 overflow-hidden p-0 lg:min-w-[360px] lg:max-w-[420px]">
               <AgentInspectPanel
-                key={inspectTile.agentId}
-                tile={inspectTile}
+                key={inspectAgent.agentId}
+                agent={inspectAgent}
                 client={client}
                 models={gatewayModels}
                 onClose={() => setInspectAgentId(null)}
-                onDelete={() => handleDeleteAgent(inspectTile.agentId)}
+                onDelete={() => handleDeleteAgent(inspectAgent.agentId)}
                 onModelChange={(value) =>
-                  handleModelChange(inspectTile.agentId, inspectTile.sessionKey, value)
+                  handleModelChange(inspectAgent.agentId, inspectAgent.sessionKey, value)
                 }
                 onThinkingChange={(value) =>
-                  handleThinkingChange(inspectTile.agentId, inspectTile.sessionKey, value)
+                  handleThinkingChange(inspectAgent.agentId, inspectAgent.sessionKey, value)
                 }
                 onToolCallingToggle={(enabled) =>
-                  handleToolCallingToggle(inspectTile.agentId, enabled)
+                  handleToolCallingToggle(inspectAgent.agentId, enabled)
                 }
                 onThinkingTracesToggle={(enabled) =>
-                  handleThinkingTracesToggle(inspectTile.agentId, enabled)
+                  handleThinkingTracesToggle(inspectAgent.agentId, enabled)
                 }
               />
             </div>
           ) : null}
         </div>
-
-        {CANVAS_MODE_ENABLED ? (
-          <div className="mt-auto flex justify-end">
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-full border border-input bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:border-ring disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => void handleCleanUpLayout()}
-              disabled={agents.length === 0 || status !== "connected"}
-            >
-              Clean up
-            </button>
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -2209,8 +1990,8 @@ const AgentCanvasPage = () => {
 
 export default function Home() {
   return (
-    <AgentCanvasProvider>
-      <AgentCanvasPage />
-    </AgentCanvasProvider>
+    <AgentStoreProvider>
+      <AgentStudioPage />
+    </AgentStoreProvider>
   );
 }

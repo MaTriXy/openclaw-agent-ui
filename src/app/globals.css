@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@xyflow/react/dist/style.css";
 @import "../../node_modules/react-mentions-ts/styles/tailwind.css";
 @import "./styles/markdown.css";
 
@@ -198,70 +197,6 @@ textarea:focus::-webkit-scrollbar {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-}
-
-.canvas-surface {
-  background: var(--background);
-  border: none;
-  border-radius: var(--radius-lg);
-  box-shadow: none;
-  overscroll-behavior: none;
-  touch-action: none;
-}
-
-.canvas-content {
-  will-change: transform;
-}
-
-.react-flow__node.selectable.selected,
-.react-flow__node.selectable:focus,
-.react-flow__node.selectable:focus-visible,
-.react-flow__node-default.selectable.selected,
-.react-flow__node-default.selectable:focus,
-.react-flow__node-default.selectable:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.react-flow {
-  --xy-node-border: 1px solid transparent;
-  --xy-node-border-selected: 1px solid transparent;
-  --xy-selection-border: 1px solid transparent;
-  --xy-resize-background-color: transparent;
-}
-
-.react-flow__resize-control.line {
-  border-color: transparent;
-}
-
-.react-flow__resize-control.handle {
-  background-color: transparent;
-  border-color: transparent;
-}
-
-.react-flow__attribution,
-.xy-flow__attribution {
-  display: none;
-}
-
-.dark .react-flow__controls,
-.dark .react-flow__minimap {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-.dark .react-flow__controls-button {
-  background: var(--card);
-  color: var(--foreground);
-  border-color: var(--border);
-}
-
-.dark .react-flow__controls-button:hover {
-  background: var(--accent);
-  color: var(--foreground);
 }
 
 .fade-up {

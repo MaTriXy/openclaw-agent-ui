@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentTile } from "@/features/canvas/state/store";
+import type { AgentState } from "@/features/agents/state/store";
 import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import {
   resolveHeartbeatSettings,
@@ -23,7 +23,7 @@ import {
 const HEARTBEAT_INTERVAL_OPTIONS = ["15m", "30m", "1h", "2h", "6h", "12h", "24h"];
 
 type AgentInspectPanelProps = {
-  tile: AgentTile;
+  agent: AgentState;
   client: GatewayClient;
   models: GatewayModelChoice[];
   onClose: () => void;
@@ -35,7 +35,7 @@ type AgentInspectPanelProps = {
 };
 
 export const AgentInspectPanel = ({
-  tile,
+  agent,
   client,
   models,
   onClose,
@@ -100,7 +100,7 @@ export const AgentInspectPanel = ({
     setWorkspaceLoading(true);
     setWorkspaceError(null);
     try {
-      const sessionKey = tile.sessionKey?.trim();
+      const sessionKey = agent.sessionKey?.trim();
       if (!sessionKey) {
         setWorkspaceError("Session key is missing for this agent.");
         return;
@@ -139,13 +139,13 @@ export const AgentInspectPanel = ({
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [extractToolText, isMissingFileError, tile.sessionKey]);
+  }, [extractToolText, isMissingFileError, agent.sessionKey]);
 
   const saveWorkspaceFiles = useCallback(async () => {
     setWorkspaceSaving(true);
     setWorkspaceError(null);
     try {
-      const sessionKey = tile.sessionKey?.trim();
+      const sessionKey = agent.sessionKey?.trim();
       if (!sessionKey) {
         setWorkspaceError("Session key is missing for this agent.");
         return;
@@ -179,7 +179,7 @@ export const AgentInspectPanel = ({
     } finally {
       setWorkspaceSaving(false);
     }
-  }, [tile.sessionKey, workspaceFiles]);
+  }, [agent.sessionKey, workspaceFiles]);
 
   const handleWorkspaceTabChange = useCallback(
     (nextTab: WorkspaceFileName) => {
@@ -199,7 +199,7 @@ export const AgentInspectPanel = ({
       const snapshot = await client.call<GatewayConfigSnapshot>("config.get", {});
       const config =
         snapshot.config && typeof snapshot.config === "object" ? snapshot.config : {};
-      const result = resolveHeartbeatSettings(config, tile.agentId);
+      const result = resolveHeartbeatSettings(config, agent.agentId);
       const every = result.heartbeat.every ?? "30m";
       const enabled = every !== "0m";
       const isPreset = HEARTBEAT_INTERVAL_OPTIONS.includes(every);
@@ -245,7 +245,7 @@ export const AgentInspectPanel = ({
     } finally {
       setHeartbeatLoading(false);
     }
-  }, [client, tile.agentId]);
+  }, [client, agent.agentId]);
 
   const saveHeartbeat = useCallback(async () => {
     setHeartbeatSaving(true);
@@ -273,8 +273,8 @@ export const AgentInspectPanel = ({
           : null;
       const result = await updateGatewayHeartbeat({
         client,
-        agentId: tile.agentId,
-        sessionKey: tile.sessionKey,
+        agentId: agent.agentId,
+        sessionKey: agent.sessionKey,
         payload: {
           override: heartbeatOverride,
           heartbeat: {
@@ -334,7 +334,7 @@ export const AgentInspectPanel = ({
     heartbeatTargetCustom,
     heartbeatTargetMode,
     client,
-    tile.agentId,
+    agent.agentId,
   ]);
 
   useEffect(() => {
@@ -360,7 +360,7 @@ export const AgentInspectPanel = ({
       })),
     [models]
   );
-  const modelValue = tile.model ?? "";
+  const modelValue = agent.model ?? "";
   const modelOptionsWithFallback =
     modelValue && !modelOptions.some((option) => option.value === modelValue)
       ? [{ value: modelValue, label: modelValue, reasoning: undefined }, ...modelOptions]
@@ -381,7 +381,7 @@ export const AgentInspectPanel = ({
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Inspect
           </div>
-          <div className="text-sm font-semibold text-foreground">{tile.name}</div>
+          <div className="text-sm font-semibold text-foreground">{agent.name}</div>
         </div>
         <button
           className="rounded-lg border border-border px-3 py-2 text-xs font-semibold uppercase text-muted-foreground"
@@ -490,7 +490,7 @@ export const AgentInspectPanel = ({
               <span>Model</span>
               <select
                 className="h-10 w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground"
-                value={tile.model ?? ""}
+                value={agent.model ?? ""}
                 onChange={(event) => {
                   const value = event.target.value.trim();
                   onModelChange(value ? value : null);
@@ -511,7 +511,7 @@ export const AgentInspectPanel = ({
                 <span>Thinking</span>
                 <select
                   className="h-10 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground"
-                  value={tile.thinkingLevel ?? ""}
+                  value={agent.thinkingLevel ?? ""}
                   onChange={(event) => {
                     const value = event.target.value.trim();
                     onThinkingChange(value ? value : null);
@@ -537,7 +537,7 @@ export const AgentInspectPanel = ({
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-input text-foreground"
-                checked={tile.toolCallingEnabled}
+                checked={agent.toolCallingEnabled}
                 onChange={(event) => onToolCallingToggle(event.target.checked)}
               />
             </label>
@@ -546,7 +546,7 @@ export const AgentInspectPanel = ({
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-input text-foreground"
-                checked={tile.showThinkingTraces}
+                checked={agent.showThinkingTraces}
                 onChange={(event) => onThinkingTracesToggle(event.target.checked)}
               />
             </label>
