@@ -1,4 +1,5 @@
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
+import { Brain } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type HeaderBarProps = {
@@ -6,6 +7,9 @@ type HeaderBarProps = {
   gatewayUrl: string;
   agentCount: number;
   onConnectionSettings: () => void;
+  onBrainFiles: () => void;
+  brainFilesOpen: boolean;
+  brainDisabled?: boolean;
 };
 
 const statusDotStyles: Record<GatewayStatus, string> = {
@@ -25,6 +29,9 @@ export const HeaderBar = ({
   gatewayUrl,
   agentCount,
   onConnectionSettings,
+  onBrainFiles,
+  brainFilesOpen,
+  brainDisabled = false,
 }: HeaderBarProps) => {
   return (
     <div className="glass-panel fade-up relative overflow-hidden px-4 py-4 sm:px-6">
@@ -54,6 +61,20 @@ export const HeaderBar = ({
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <button
+              className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${
+                brainFilesOpen
+                  ? "border-border bg-muted text-foreground"
+                  : "border-input/90 bg-background/75 text-foreground hover:border-ring hover:bg-card"
+              }`}
+              type="button"
+              onClick={onBrainFiles}
+              data-testid="brain-files-toggle"
+              disabled={brainDisabled}
+            >
+              <Brain className="h-4 w-4" />
+              Brain
+            </button>
             <button
               className="rounded-md border border-input/90 bg-background/75 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition hover:border-ring hover:bg-card"
               type="button"

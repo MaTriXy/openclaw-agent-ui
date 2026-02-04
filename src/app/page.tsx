@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentChatPanel } from "@/features/agents/components/AgentChatPanel";
-import { AgentInspectPanel } from "@/features/agents/components/AgentInspectPanel";
+import { AgentSettingsPanel } from "@/features/agents/components/AgentSettingsPanel";
+import { AgentBrainPanel } from "@/features/agents/components/AgentBrainPanel";
 import { FleetSidebar } from "@/features/agents/components/FleetSidebar";
 import { HeaderBar } from "@/features/agents/components/HeaderBar";
 import { ConnectionPanel } from "@/features/agents/components/ConnectionPanel";
@@ -329,7 +330,9 @@ const AgentStudioPage = () => {
   const summaryRefreshRef = useRef<number | null>(null);
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [gatewayModelsError, setGatewayModelsError] = useState<string | null>(null);
-  const [inspectAgentId, setInspectAgentId] = useState<string | null>(null);
+  const [settingsAgentId, setSettingsAgentId] = useState<string | null>(null);
+  const [brainPanelOpen, setBrainPanelOpen] = useState(false);
+  const [brainAgentId, setBrainAgentId] = useState<string | null>(null);
   const studioSessionIdRef = useRef<string | null>(null);
   const thinkingDebugRef = useRef<Set<string>>(new Set());
   const chatRunSeenRef = useRef<Set<string>>(new Set());
@@ -351,10 +354,16 @@ const AgentStudioPage = () => {
       : null;
     return selectedInFilter ?? filteredAgents[0] ?? null;
   }, [filteredAgents, selectedAgent]);
-  const inspectAgent = useMemo(() => {
-    if (!inspectAgentId) return null;
-    return agents.find((entry) => entry.agentId === inspectAgentId) ?? null;
-  }, [agents, inspectAgentId]);
+  const settingsAgent = useMemo(() => {
+    if (!settingsAgentId) return null;
+    return agents.find((entry) => entry.agentId === settingsAgentId) ?? null;
+  }, [agents, settingsAgentId]);
+  const selectedBrainAgentId = useMemo(() => {
+    if (brainAgentId && agents.some((entry) => entry.agentId === brainAgentId)) {
+      return brainAgentId;
+    }
+    return focusedAgent?.agentId ?? agents[0]?.agentId ?? null;
+  }, [agents, brainAgentId, focusedAgent]);
   const faviconSeed = useMemo(() => {
     const firstAgent = agents[0];
     const seed = firstAgent?.avatarSeed ?? firstAgent?.agentId ?? "";
@@ -849,17 +858,23 @@ const AgentStudioPage = () => {
   }, [setLoading, status]);
 
   useEffect(() => {
-    if (!inspectAgentId) return;
-    if (state.selectedAgentId && state.selectedAgentId !== inspectAgentId) {
-      setInspectAgentId(null);
+    if (!settingsAgentId) return;
+    if (state.selectedAgentId && state.selectedAgentId !== settingsAgentId) {
+      setSettingsAgentId(null);
     }
-  }, [inspectAgentId, state.selectedAgentId]);
+  }, [settingsAgentId, state.selectedAgentId]);
 
   useEffect(() => {
-    if (inspectAgentId && !inspectAgent) {
-      setInspectAgentId(null);
+    if (settingsAgentId && !settingsAgent) {
+      setSettingsAgentId(null);
     }
-  }, [inspectAgentId, inspectAgent]);
+  }, [settingsAgentId, settingsAgent]);
+
+  useEffect(() => {
+    if (!brainPanelOpen) return;
+    if (selectedBrainAgentId) return;
+    setBrainPanelOpen(false);
+  }, [brainPanelOpen, selectedBrainAgentId]);
 
   useEffect(() => {
     if (status !== "connected") {
@@ -1124,13 +1139,33 @@ const AgentStudioPage = () => {
     }
   }, [agents, loadAgentHistory, status]);
 
-  const handleInspectAgent = useCallback(
+  const handleOpenAgentSettings = useCallback(
     (agentId: string) => {
-      setInspectAgentId(agentId);
+      setBrainPanelOpen(false);
+      setSettingsAgentId(agentId);
       dispatch({ type: "selectAgent", agentId });
     },
     [dispatch]
   );
+
+  const handleBrainToggle = useCallback(() => {
+    setBrainPanelOpen((prev) => {
+      const next = !prev;
+      if (!next) return false;
+      setSettingsAgentId(null);
+      setBrainAgentId((current) => {
+        if (current && stateRef.current.agents.some((entry) => entry.agentId === current)) {
+          return current;
+        }
+        return (
+          stateRef.current.selectedAgentId ??
+          stateRef.current.agents[0]?.agentId ??
+          null
+        );
+      });
+      return true;
+    });
+  }, []);
 
   const handleDeleteAgent = useCallback(
     async (agentId: string) => {
@@ -1146,7 +1181,7 @@ const AgentStudioPage = () => {
           agentId,
           sessionKey: agent.sessionKey,
         });
-        setInspectAgentId(null);
+        setSettingsAgentId(null);
         await loadAgents();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to delete agent.";
@@ -1732,6 +1767,9 @@ const AgentStudioPage = () => {
             gatewayUrl={gatewayUrl}
             agentCount={agents.length}
             onConnectionSettings={() => setShowConnectionPanel((prev) => !prev)}
+            onBrainFiles={handleBrainToggle}
+            brainFilesOpen={brainPanelOpen}
+            brainDisabled={!hasAnyAgents}
           />
         </div>
 
@@ -1788,7 +1826,7 @@ const AgentStudioPage = () => {
                   agent={focusedAgent}
                   isSelected={false}
                   canSend={status === "connected"}
-                  onInspect={() => handleInspectAgent(focusedAgent.agentId)}
+                  onOpenSettings={() => handleOpenAgentSettings(focusedAgent.agentId)}
                   onNameChange={(name) =>
                     handleRenameAgent(focusedAgent.agentId, name)
                   }
@@ -1811,26 +1849,39 @@ const AgentStudioPage = () => {
                 </div>
               )}
             </div>
-            {inspectAgent ? (
+            {brainPanelOpen ? (
               <div className="glass-panel min-h-0 w-full shrink-0 overflow-hidden p-0 xl:min-w-[360px] xl:max-w-[430px]">
-                <AgentInspectPanel
-                  key={inspectAgent.agentId}
-                  agent={inspectAgent}
+                <AgentBrainPanel
+                  agents={agents}
+                  selectedAgentId={selectedBrainAgentId}
+                  onSelectAgent={(agentId) => {
+                    setBrainAgentId(agentId);
+                    dispatch({ type: "selectAgent", agentId });
+                  }}
+                  onClose={() => setBrainPanelOpen(false)}
+                />
+              </div>
+            ) : null}
+            {settingsAgent ? (
+              <div className="glass-panel min-h-0 w-full shrink-0 overflow-hidden p-0 xl:min-w-[360px] xl:max-w-[430px]">
+                <AgentSettingsPanel
+                  key={settingsAgent.agentId}
+                  agent={settingsAgent}
                   client={client}
                   models={gatewayModels}
-                  onClose={() => setInspectAgentId(null)}
-                  onDelete={() => handleDeleteAgent(inspectAgent.agentId)}
+                  onClose={() => setSettingsAgentId(null)}
+                  onDelete={() => handleDeleteAgent(settingsAgent.agentId)}
                   onModelChange={(value) =>
-                    handleModelChange(inspectAgent.agentId, inspectAgent.sessionKey, value)
+                    handleModelChange(settingsAgent.agentId, settingsAgent.sessionKey, value)
                   }
                   onThinkingChange={(value) =>
-                    handleThinkingChange(inspectAgent.agentId, inspectAgent.sessionKey, value)
+                    handleThinkingChange(settingsAgent.agentId, settingsAgent.sessionKey, value)
                   }
                   onToolCallingToggle={(enabled) =>
-                    handleToolCallingToggle(inspectAgent.agentId, enabled)
+                    handleToolCallingToggle(settingsAgent.agentId, enabled)
                   }
                   onThinkingTracesToggle={(enabled) =>
-                    handleThinkingTracesToggle(inspectAgent.agentId, enabled)
+                    handleThinkingTracesToggle(settingsAgent.agentId, enabled)
                   }
                 />
               </div>
